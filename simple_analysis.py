@@ -2,10 +2,31 @@ import pandas as pd
 import os
 import numpy as np
 from collections import Counter
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
+# my dell has problem using matplotlib, so currently disable the drawing function...
+
 
 # check out https://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy
 pd.options.mode.copy_on_write = True
+
+def plot_year_wage_scatter(df: pd.DataFrame, cur_port: int):
+    df_to_plot = df.loc[df['portcode'] == cur_port, ['year', 'pay']].reset_index(drop=True)
+
+    # year_count = df_to_plot.groupby(by='year').size().reset_index(name='counts')
+    # job_count = df_to_plot.groupby(by='rank').size().reset_index(name='counts')
+
+    # https://ithelp.ithome.com.tw/articles/10211370
+    plt.scatter(
+        df_to_plot['year'].astype("int"),
+        df_to_plot['pay']
+    )
+    ttl = f'{cur_port}_year_wage_scatter'
+    plt.title(ttl)
+
+    plt.savefig(f"graphs/{ttl}.jpg")
+    plt.close() 
+
+    return
 
 def analysis(df: pd.DataFrame):
     # ----------
@@ -59,21 +80,8 @@ def analysis(df: pd.DataFrame):
     # for scatter plot, ignore NaNs. 
     # But need to report the total count and Na counts.
     for cur_port, _ in top_ports:
-        df_to_plot = df.loc[df['portcode'] == cur_port, ['year', 'pay']].reset_index(drop=True)
-
-        # year_count = df_to_plot.groupby(by='year').size().reset_index(name='counts')
-        # job_count = df_to_plot.groupby(by='rank').size().reset_index(name='counts')
-
-        # https://ithelp.ithome.com.tw/articles/10211370
-        plt.scatter(
-            df_to_plot['year'].astype("int"),
-            df_to_plot['pay']
-        )
-        ttl = f'{cur_port}_year_wage_scatter'
-        plt.title(ttl)
-
-        plt.savefig(f"graphs/{ttl}.jpg")
-        plt.close() 
+        # plot_year_wage_scatter(df, cur_port)
+        pass
 
     return
 
