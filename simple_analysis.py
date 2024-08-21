@@ -2,14 +2,15 @@ import pandas as pd
 import os
 import numpy as np
 from collections import Counter
-# import matplotlib.pyplot as plt
+import statsmodels.api as sm
+import matplotlib.pyplot as plt
 # my dell has problem using matplotlib, so currently disable the drawing function...
 
 
 # check out https://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy
 pd.options.mode.copy_on_write = True
 
-def plot_year_wage_scatter(df: pd.DataFrame, cur_port: int):
+def plot_year_wage_scatter(df: pd.DataFrame, cur_port: int, graph_dir: str = "graphs"):
     df_to_plot = df.loc[df['portcode'] == cur_port, ['year', 'pay']].reset_index(drop=True)
 
     # year_count = df_to_plot.groupby(by='year').size().reset_index(name='counts')
@@ -23,8 +24,32 @@ def plot_year_wage_scatter(df: pd.DataFrame, cur_port: int):
     ttl = f'{cur_port}_year_wage_scatter'
     plt.title(ttl)
 
-    plt.savefig(f"graphs/{ttl}.jpg")
+    
+
+    plt.savefig(f"{graph_dir}/{ttl}.jpg")
     plt.close() 
+
+    return
+
+def wage_index(locations, data: pd.DataFrame) -> pd.Series:
+    print(f'Currently working on location: {locations}')
+    if not isinstance(locations, list):
+        data = data.drop(columns=['portcode'])
+
+
+    cols_to_dum = [c for c in data.columns if c not in ['pay', 'tenure']]
+    data = pd.get_dummies(data, columns=cols_to_dum, drop_first=True)
+
+    var_x = [c for c in data.columns if c != 'pay']
+
+    X = data[var_x]
+    y = np.log(data['pay'])
+
+    X = sm.add_constant(X)
+
+    model = sm.OLS(y, X.astype(float)).fit()
+
+    print(model.summary())
 
     return
 
@@ -47,11 +72,12 @@ def analysis(df: pd.DataFrame):
 
     # "year" means the observation year, has 3 NaNs
     df.dropna(subset=['year'], inplace=True, ignore_index=True)
+    df['year'] = df['year'].astype(int)
 
     # "begin" should be the year that worker started the job.
     # so figures smaller than 1800 are set to 0 for easier filter later
     df.loc[df['begin'] < 1800, "begin"] = 0
-    df.loc[:, 'begin'] = df['begin'].astype(int)
+    df['begin'] = df['begin'].astype(int)
 
     # "transfer" should mean the year of transferring to that recorded job
     # not sure how this column will be used, simply changed the NaNs to 0
@@ -61,6 +87,10 @@ def analysis(df: pd.DataFrame):
     # but there are too many of them (15222), so I keep them for now
     # NaN set to 0 for easier filter later
 
+    # make tenure: use 'year' - 'begin', no 'begin' then 0
+    df['tenure'] = df['year'] - df['begin']
+    df.loc[df['begin'] == 0, 'tenure'] = 0
+
     # --------
     # Analysis
     # --------
@@ -68,14 +98,24 @@ def analysis(df: pd.DataFrame):
     cond_c0 = df['certainty_lvl'] == 0 # 2274; 1: 859
     cond_c2 = df['certainty_lvl'] == 2 # 6445
     cond_c3 = df['certainty_lvl'] == 3 # 61351
-    cond_highpay = df['pay'] > 1000 # 22, one in shashi 1116, other in hankow
+    cond_normalpay = df['pay'] < 1000 # 22, one in shashi 1116, other in hankow
 
-    # portcode freq
-    conds = cond_c3 | cond_c2 # can apply other conds with '&' or '|'
-    port_freq = Counter(df.loc[conds, 'portcode'])
-    top_ports = port_freq.most_common(10)
+    # can apply other conds with '&' or '|'
+    conds = (cond_c3 | cond_c2) & cond_normalpay
 
-    print(top_ports)
+    # apply conditions
+    df = df.loc[conds]
+
+    # TOP N ports and rank_new
+    top_n = 10
+
+    port_freq = Counter(df['portcode'])
+    top_ports = port_freq.most_common(top_n)
+    rank_freq = Counter(df['rank_new'])
+    top_rank = rank_freq.most_common(top_n)
+
+    # print(top_ports)
+    # print(top_rank)
 
     # for scatter plot, ignore NaNs. 
     # But need to report the total count and Na counts.
@@ -83,21 +123,43 @@ def analysis(df: pd.DataFrame):
         # plot_year_wage_scatter(df, cur_port)
         pass
 
+    # do the hedonic regression
+    df = df[df['rank_new'].isin([r for r, _ in top_rank])]
+
+    variables = ['pay', 'rank_new', 'tenure', 'portcode', 'year']
+    ports = [p for p, _ in top_ports]
+    
+    # Shanghai = 195; Soochow = 435
+    for loc in [195, 435, ports]:
+        if isinstance(loc, list):
+            df_fil = df[df['portcode'].isin(ports)]
+        else:
+            df_fil = df[df['portcode'] == loc]
+        index_srs = wage_index(loc, df_fil[variables])
+
+
     return
+
+
+
 
 def main():
     df = pd.read_excel("data/data_port_processed.xlsm", sheet_name="Sheet1")
 
     cols_to_keep = [
         "year", "rank", "begin", "promote", "transfer", "pay", "areacode", 
-        "portcode", "certainty_lvl", "port", "possible_names"
+        "portcode", "certainty_lvl", "port", "possible_names", "rank_new"
     ]
 
     out_dir = "./output/"
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
 
-    # analysis(df[cols_to_keep])
+    graph_dir = "./graphs/"
+    if not os.path.exists(graph_dir):
+        os.makedirs(graph_dir)
+
+    analysis(df[cols_to_keep])
 
 if __name__ == "__main__":
     main()
