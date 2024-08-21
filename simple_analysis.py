@@ -4,8 +4,6 @@ import numpy as np
 from collections import Counter
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
-# my dell has problem using matplotlib, so currently disable the drawing function...
-
 
 # check out https://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy
 pd.options.mode.copy_on_write = True
@@ -24,8 +22,6 @@ def plot_year_wage_scatter(df: pd.DataFrame, cur_port: int, graph_dir: str = "gr
     ttl = f'{cur_port}_year_wage_scatter'
     plt.title(ttl)
 
-    
-
     plt.savefig(f"{graph_dir}/{ttl}.jpg")
     plt.close() 
 
@@ -36,9 +32,17 @@ def wage_index(locations, data: pd.DataFrame) -> pd.Series:
     if not isinstance(locations, list):
         data = data.drop(columns=['portcode'])
 
+    # limit to the first n years (since using all years won't give a valid result)
+    first_n = 10
+    first_n_year = data['year'].sort_values().drop_duplicates().head(first_n)
+    data = data[data['year'].isin([r for r in first_n_year])]
+
+    min_year = min(data['year']) # for dropping the first year-col as base year
 
     cols_to_dum = [c for c in data.columns if c not in ['pay', 'tenure']]
-    data = pd.get_dummies(data, columns=cols_to_dum, drop_first=True)
+    data = pd.get_dummies(data, columns=cols_to_dum)
+
+    data = data.drop(columns=[f'year_{min_year}'])
 
     var_x = [c for c in data.columns if c != 'pay']
 
@@ -51,7 +55,11 @@ def wage_index(locations, data: pd.DataFrame) -> pd.Series:
 
     print(model.summary())
 
-    return
+    p = model.params
+    year_coef = p[p.index.str.contains('year')]
+
+    # 最後有的會少這麼多職業我猜是因為在限制前10年資料下，很多職業就沒了
+    return pd.concat([pd.Series([1], index=[f'year_{min_year}']), year_coef])
 
 def analysis(df: pd.DataFrame):
     # ----------
@@ -98,7 +106,7 @@ def analysis(df: pd.DataFrame):
     cond_c0 = df['certainty_lvl'] == 0 # 2274; 1: 859
     cond_c2 = df['certainty_lvl'] == 2 # 6445
     cond_c3 = df['certainty_lvl'] == 3 # 61351
-    cond_normalpay = df['pay'] < 1000 # 22, one in shashi 1116, other in hankow
+    cond_normalpay = df['pay'] < 1000 # > 1000 cases: 22, one in shashi 1116, other in hankow
 
     # can apply other conds with '&' or '|'
     conds = (cond_c3 | cond_c2) & cond_normalpay
@@ -106,26 +114,19 @@ def analysis(df: pd.DataFrame):
     # apply conditions
     df = df.loc[conds]
 
-    # TOP N ports and rank_new
+    # TOP N ports
     top_n = 10
 
     port_freq = Counter(df['portcode'])
     top_ports = port_freq.most_common(top_n)
-    rank_freq = Counter(df['rank_new'])
-    top_rank = rank_freq.most_common(top_n)
-
-    # print(top_ports)
-    # print(top_rank)
 
     # for scatter plot, ignore NaNs. 
     # But need to report the total count and Na counts.
-    for cur_port, _ in top_ports:
-        # plot_year_wage_scatter(df, cur_port)
-        pass
+    # for cur_port, _ in top_ports:
+    #     plot_year_wage_scatter(df, cur_port)
+    #     pass
 
     # do the hedonic regression
-    df = df[df['rank_new'].isin([r for r, _ in top_rank])]
-
     variables = ['pay', 'rank_new', 'tenure', 'portcode', 'year']
     ports = [p for p, _ in top_ports]
     
@@ -135,12 +136,16 @@ def analysis(df: pd.DataFrame):
             df_fil = df[df['portcode'].isin(ports)]
         else:
             df_fil = df[df['portcode'] == loc]
+
+        rank_freq = Counter(df_fil['rank_new'])
+        top_rank = rank_freq.most_common(top_n)
+
+        df_fil = df_fil[df_fil['rank_new'].isin([r for r, _ in top_rank])]
+
         index_srs = wage_index(loc, df_fil[variables])
 
-
+        print(index_srs)
     return
-
-
 
 
 def main():
@@ -160,6 +165,7 @@ def main():
         os.makedirs(graph_dir)
 
     analysis(df[cols_to_keep])
+
 
 if __name__ == "__main__":
     main()
