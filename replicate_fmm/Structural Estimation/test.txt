@@ -1,0 +1,40 @@
+india_data = imread(strcat(dir_data_raw,'India - outline.tif'));
+        in_india = max(india_data,[],3)==0;
+        
+    % filter rules
+        avg_filt = 10; % size of square where you take the average value
+        size_filt = 0.025; % what percent of pixels have to be "on" to count an area as "on"
+        temp_filter = fspecial('gaussian',[avg_filt,avg_filt]);
+        
+    % 2004 data
+        roads_2004_data = (imread(strcat(dir_data_raw,'India - highways 2004.tif')));
+
+        % getting each type of road
+
+            % highways are orange
+                highways = double(roads_2004_data(:,:,1)==255 & roads_2004_data(:,:,2)==173 & roads_2004_data(:,:,3)==26) + ...
+                     double(roads_2004_data(:,:,1)==0 & roads_2004_data(:,:,2)==255 & roads_2004_data(:,:,3)==105) + ... % bright green 
+                     double(roads_2004_data(:,:,1)==0 & roads_2004_data(:,:,2)==255 & roads_2004_data(:,:,3)==255) + ... % bright blue
+                     double(roads_2004_data(:,:,1)==166 & roads_2004_data(:,:,2)==180 & roads_2004_data(:,:,3)==247); % purple
+                temp_filter2 = fspecial('disk',7);
+                highways = imfilter(highways,temp_filter2,'replicate'); 
+                highways = highways>0; 
+                highways = highways.*in_india;
+                
+            % medium roads are red 
+                med_roads = double(roads_2004_data(:,:,1)==255 & roads_2004_data(:,:,2)==69 & roads_2004_data(:,:,3)==101);
+                med_roads = imfilter(med_roads,temp_filter,'replicate'); 
+                med_roads = med_roads>size_filt; 
+                med_roads = med_roads.*in_india.*(1-highways);        
+                
+            % tiny roads are fuscia
+                tiny_roads = double(roads_2004_data(:,:,1)==255 & roads_2004_data(:,:,2)==18 & roads_2004_data(:,:,3)==255);
+                tiny_roads  = imfilter(tiny_roads ,temp_filter,'replicate'); 
+                tiny_roads  = tiny_roads >size_filt; 
+                tiny_roads  = tiny_roads.*in_india.*(1-med_roads-highways);                  
+                
+        % renaming
+            highways_2004 = highways;
+            tiny_roads_2004 = tiny_roads;
+            med_roads_2004 = med_roads;
+            roads_2004 = (highways + tiny_roads + med_roads)>0;
