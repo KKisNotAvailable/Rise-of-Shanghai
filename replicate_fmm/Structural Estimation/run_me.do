@@ -43,15 +43,23 @@ if `regeninputs' == 1{
 ** some notes **
 ****************
 /*
-1. [待辦] 每個code file產出的檔案 (我們所需的即可)
+1. [待辦] 每個code file產出的檔案列個清單 (我們所需的即可)
+
 2. 圖檔似乎沒有在code裡面進行調整對齊，所以應該是在存成tif的時候就已經確定邊境的位置差不多了
    關於這點，我們要再看看中國的地圖有沒有已經有完好的shape圖檔 (對照基準)，這樣即使真的需要拿地圖轉成我們需要的檔案也比較方便
    -> 目前關於如何對齊，應該拿shape當base，然後地圖檔轉成黑白之後 (map1)，看map1如何project到base上，再用那個projection function
       去把地圖轉過去再resize即可 (大小align)。
    -> actually, the way they aligned the maps maybe was by fixing 
       lon and lat?
+
 3. 1_clean_ICRISATonly_...8_17_2021.do要修改，因為沒有ICRISAT_croplevel_red17crops.dta
    沒辦法直接按下去跑。(那個檔案是rerun setup裡面的VDSA得到的)
+   -> 其實好像這個檔案可以直接不要了。
+
 4. 發現其實直接do distance_081721.do就好了，只是需要先
-   4-1. 確認district_geoloc.dta裡面的資料無誤 (一個一個去看谷哥地圖，先用python轉成好貼的型態)
+   4-1. [待辦] 確認../Data/raw/district_geoloc.dta裡面的資料無誤 (一個一個去看谷哥地圖，先用python轉成好貼的型態)
+   4-2. [待辦] 看看最終產出的資料 district_distance_dist`d'_${date}.dta 裡面unique的地點跟coords跟我們產出的有無相符
+   -> 阿如果都可以的話就直接把 distance_081721.do 裡面抓的資料改名吧 (注意使用欄位的名稱也要一致)
+
+5. 產出的東西不會有具體的path吧?!應該只有花的時間 (distance in hour)
 */
