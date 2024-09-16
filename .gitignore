@@ -2,6 +2,7 @@ data/
 output/
 graphs/
 Data/
+FastMarching_version3b/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
