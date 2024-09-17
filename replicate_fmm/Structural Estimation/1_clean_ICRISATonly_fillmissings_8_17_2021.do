@@ -1,114 +1,16 @@
 *** This is the first of the do files that processes data from the VDSA master files
+* This was extractions from 1_clean_ICRISATonly_fillmissings_8_17_2021.do
+* to do basic data cleaning for running FMM, but if we were only testing if FMM
+* actually works, this file can be ignored.
+
+* And notice I changed some of the arrangement and variable names to fit the process.
+* so it is normal that some of the code is different from the original
 
 clear
 cap log close
 set more off
-use "$dir_data_raw/ICRISAT_croplevel_red17crops.dta", clear
 
-	gen decade = string(10*floor((year)/10))  /* e.g. 1970-1979 is 1970 */
-	replace District="SANTHAL PARGANAS" if District=="DUMKA" 
-
-*this was phubani in icrisat data and bad merges means it shoudl still be
-	replace District="PHULBANI" if District=="KANDHAMAL" 
-	replace District="NORTH ARCOT" if District=="NORTH ARCOT-AMBEDKAR" 
-	replace District="NORTH ARCOT" if District=="VELLORE" 
-
-*1967 missing below
-	expand 2 if District=="MALAPPURAM" & year==1966, generate(newbie)
-	replace year=1967 if newbie==1
-
-	foreach var of varlist totgeog- cufalow {
-		replace `var'=. if newbie==1 
-	}
-
-	drop newbie
-	
-*two obs here for 1999
-preserve
-	keep  if year==1999 & District=="SINGBHUM"
-	foreach var of varlist price-dec {
-		egen m`var'=max(`var') if year==1999 & District=="SINGBHUM",by(crop)
-		replace `var'=m`var' if `var'==. & year==1999 & District=="SINGBHUM" 
-		drop m`var'
-	}
-	replace soiltype="USTALF/USTOLLS - 100%" if year==1999 & dist=="SINGBHUM" & state=="BIHAR" 
-	drop if year==1999 & District=="SINGBHUM" & state=="JHARKHAND" 
-	save "$dir_scratch/tempdhksfhasf.dta", replace
-restore
-
-	drop  if year==1999 & District=="SINGBHUM"
-	append using "$dir_scratch/tempdhksfhasf.dta"
-
-*now we have a rectangular data set 
-*some manual cleans
-	replace District="BILASPUR (MADHYA PRADESH)" if District=="BILASPUR (CHHATTISGARH)" 
-	replace District="RAIGARH (MADHYA PRADESH)" if District=="RAIGARH (CHHATTISGARH)" 
-	replace State="MADHYA PRADESH" if District=="RAIGARH (MADHYA PRADESH)" 
-	replace State="MADHYA PRADESH" if District=="BILASPUR (MADHYA PRADESH)" 
-	replace State="UTTAR PRADESH" if State=="UTTARANCHAL"
-	replace State="MADHYA PRADESH" if State=="CHHATTISGARH"
-	replace State="BIHAR" if State=="JHARKHAND"
-
-	***paddy price fix
-	gen Xpricepaddy=price if crop=="Paddy"
-	egen pricepaddy=max(Xpricepaddy),by(State District year)
-	replace pricepaddy=. if crop!="Rice"
-	drop Xpricepaddy
-	drop if crop=="Paddy"
-	gen paddypriceratio= pricepaddy/price
-	egen meanppr_sd=mean(paddypriceratio),by(State decade)
-	egen meanppr_d=mean(paddypriceratio),by(decade)
-	egen meanppr=mean(paddypriceratio)
-	replace price=pricepaddy/meanppr_sd if pricepaddy!=. & price==. & crop=="Rice"
-	replace price=pricepaddy/meanppr_d if pricepaddy!=. & price==. & crop=="Rice"
-	replace price=pricepaddy/meanppr if pricepaddy!=. & price==. & crop=="Rice"
-
-	*now save teh clean file
-	sort State District crop year
-save "$dir_scratch/ICRISAT_croplevel_red17crops_clean_$date.dta", replace
-
-*************************************************************
-
-* above is 1~68, no change
-
-***************
-*** 229~340 ***
-***************
-use "$dir_scratch/ICRISAT_croplevel_red17crops_clean_$date.dta", clear
-	keep year District State  lat longv
-	rename lat latitude
-	rename longv longitude
-	sort latitude longitude
-	egen tag=tag(District State) if latitude!=. & longitude!=.
-	keep if tag==1
-	drop tag year
-
-	*email pointed out errors in VDSA data
-	replace lat=12.683333 if State=="TAMIL NADU" & District=="CHENGALPATTU M.G.R."  // based on Chengalpattu wiki
-	replace longitude=79.983333 if State=="TAMIL NADU" & District=="CHENGALPATTU M.G.R."
-
-	replace lat=22.6 if State=="MADHYA PRADESH" & District=="MANDLA"  // based on mandla town wiki
-	replace longitude=80.38 if State=="MADHYA PRADESH" & District=="MANDLA"
-
-	replace lat=26.56 if State=="MADHYA PRADESH" & District=="BHIND"  // based on district capital wiki 
-	replace longitude=78.79 if State=="MADHYA PRADESH" & District=="BHIND"
-
-	replace lat=11.75 if State=="TAMIL NADU" & District=="SOUTH ARCOT"  // based on Culldelore wiki
-	replace longitude=79.75 if State=="TAMIL NADU" & District=="SOUTH ARCOT"
-
-
-	replace lat=21.94 if State=="ORISSA" & District=="MAYURBHANJ"  // based Baripada wiki
-	replace longitude=86.72 if State=="ORISSA" & District=="MAYURBHANJ"
-
-	replace lat=16.994444 if State=="MAHARASHTRA" & District=="RATNAGIRI"  // based Baripada wiki
-	replace longitude=73.3 if State=="MAHARASHTRA" & District=="RATNAGIRI"
-
-* Using google API to figure out location of each district
-	ren District district
-	ren State state
-
-preserve
-	use "$dir_data_raw/district_geoloc.dta", clear
+use "$dir_data_raw/district_geoloc.dta", clear
 	drop if state=="MADHYA PRADESH" & district=="RAIGARH (MADHYA PRADESH)" // this appeared also in chattigarh, last one was correct
 
 	*some manual cleans
@@ -119,24 +21,15 @@ preserve
 	replace state="UTTAR PRADESH" if state=="UTTARANCHAL"
 	replace state="MADHYA PRADESH" if state=="CHHATTISGARH"
 	replace state="BIHAR" if state=="JHARKHAND"
-	save "$dir_scratch/district_geoloc_${date}.dta", replace
-restore
-
-	sort state district
-	merge m:1 state district using "$dir_scratch/district_geoloc_${date}.dta"   // , keep(match master)
-	tab _merge
-	drop _merge
-	vincenty latitude longitude latitude_google longitude_google, v(distance_check)
 
 	replace latitude_google=. if district=="SANTHAL PARGANAS"   
 	replace longitude_google=. if district=="SANTHAL PARGANAS" 
 
 *% DGA 02/10/21: google tend to be better so use them. I think perhaps the icrisat are nearest rain station.
-	replace latitude=latitude_google if latitude_google!=.
-	replace longitude=longitude_google if longitude_google!=.
-	drop longitude_google latitude_google distance_check
-	ren district District
+	ren latitude_google latitude
+	ren longitude_google longitude
 	ren state State
+	ren district District
 	
 	gen StateCapital_lat=.
 	replace StateCapital_lat=17.704167  if State=="ANDHRA PRADESH" // Visakhapatnam

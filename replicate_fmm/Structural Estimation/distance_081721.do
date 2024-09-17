@@ -1,12 +1,17 @@
 * This do-file calculates the bilateral distances between all districts in each decade
 * written by Treb on October 14, 2014
-* Updated by Sapta for replication
+* Updated by Sapta for replication 
 
 clear
 
-use "$dir_scratch/ICRISAT_latlong_BiggestCity_${date}.dta"
+/* 
+use "$dir_scratch/ICRISAT_latlong_BiggestCity_${date}.dta" 
 	ren State state
 	ren District district
+*/
+use "$dir_data_raw/district_geoloc.dta"
+	ren latitude_google latitude
+	ren longitude_google longitude
 
 * Identifying all districts
 	keep state district latitude longitude
