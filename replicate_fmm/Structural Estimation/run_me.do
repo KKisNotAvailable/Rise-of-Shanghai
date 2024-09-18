@@ -4,9 +4,9 @@
 ** 1 **
 *******
 * from AA_tradevolatility_master.do (where the entire program starts)
-global dropbox "D:/User_Data/Desktop/研究資料/HWT/Rise of Shanghai/data/replicate_fmm"
+global dropbox "D:/User_Data/Desktop/研究資料/HWT/Rise of Shanghai/replicate_fmm"
 global dir "$dropbox/Structural Estimation"
-global dir_data "$dropbox/Data/"
+global dir_data "$dropbox/Data"
 global dir_data_raw "$dir_data/raw"
 global dir_data_primary "$dir_data/primary"
 /* global dir_data_secondary "$dir_data/secondary" */
@@ -27,7 +27,7 @@ if `regeninputs' == 1{
     // 下面的檔案我覺得 1~68 (產出"$dir_scratch/ICRISAT_croplevel_red17crops_clean_$date.dta") 
     // & 229~340 (產出"$dir_scratch/ICRISAT_latlong_$date.dta" & "$dir_scratch/ICRISAT_latlong_BiggestCity_$date.dta") 
     // 應該就可以
-	do "1_clean_ICRISATonly_fillmissings_8_17_2021.do" 
+	/* do "1_clean_ICRISATonly_fillmissings_8_17_2021.do"  */
 
 		* Calculating the highway distance between Indian districts - also generated Fig 2
 		* Distance between districts is calculated from digitised images of the Indian highway network. Recalculation is --
