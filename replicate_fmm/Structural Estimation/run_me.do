@@ -20,14 +20,14 @@ cd "$dir"
 set maxvar 120000, perm
 
 local regeninputs = 1 // default = 0
-local redo_highwaydistance = 1 // default = 0 => 在 distance_081721.do 裡面會用到
+local redo_highwaydistance = 0 // default = 0 => 在 distance_081721.do 裡面會用到
 * row 80-97
 if `regeninputs' == 1{
 
     // 下面的檔案我覺得 1~68 (產出"$dir_scratch/ICRISAT_croplevel_red17crops_clean_$date.dta") 
     // & 229~340 (產出"$dir_scratch/ICRISAT_latlong_$date.dta" & "$dir_scratch/ICRISAT_latlong_BiggestCity_$date.dta") 
     // 應該就可以
-	/* do "1_clean_ICRISATonly_fillmissings_8_17_2021.do"  */
+	do "1_clean_ICRISATonly_fillmissings_8_17_2021.do" 
 
 		* Calculating the highway distance between Indian districts - also generated Fig 2
 		* Distance between districts is calculated from digitised images of the Indian highway network. Recalculation is --
@@ -54,12 +54,21 @@ if `regeninputs' == 1{
 
 3. 1_clean_ICRISATonly_...8_17_2021.do要修改，因為沒有ICRISAT_croplevel_red17crops.dta
    沒辦法直接按下去跑。(那個檔案是rerun setup裡面的VDSA得到的)
-   -> 其實好像這個檔案可以直接不要了。
+   - 我只擷取用 district_geoloc.dta 產出 bigcity 的部分 (甚至只保留 bigcity，對我的電腦比較友善)
+     大概是原檔案的 262-340，但有修改，目的只是為了做出 bigcity subset。
 
-4. 發現其實直接do distance_081721.do就好了，只是需要先
-   4-1. [待辦] 確認../Data/raw/district_geoloc.dta裡面的資料無誤 (一個一個去看谷哥地圖，先用python轉成好貼的型態)
-   4-2. [待辦] 看看最終產出的資料 district_distance_dist`d'_${date}.dta 裡面unique的地點跟coords跟我們產出的有無相符
-   -> 阿如果都可以的話就直接把 distance_081721.do 裡面抓的資料改名吧 (注意使用欄位的名稱也要一致)
+4. distance_081721.do 
+   - 呼叫matlab的時候加了生成.log的指令方便debug
+   - 在最上面叫資料點進來的地方可以看要用 bigcity 的 (我自己產的subset，小很多；原檔案的 bigcity 是有包括其他districts的)
+     或是直接拿geoloc全部下去跑都可以 (只是需要很久)
 
-5. 產出的東西不會有具體的path吧?!應該只有花的時間 (distance in hour)
+5. distance_081721.m
+   - 把 parfor 的部分改回 for，因為電腦記憶體不夠做平行運算。
+   - setpath.m 裡面我把一些斜線刪掉，但應該不刪也沒差，還有可以調整平行運算的工人數
+
+6. 產出的東西不會有具體的path吧?!應該只有花的時間 (distance in hour)
+
+6. required packages:
+   Stata: ssc install vincenty
+   Matlab: Image Processing Toolbox, Parallel Computing Toolboxes
 */

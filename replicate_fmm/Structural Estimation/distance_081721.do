@@ -4,14 +4,15 @@
 
 clear
 
-/* 
+
 use "$dir_scratch/ICRISAT_latlong_BiggestCity_${date}.dta" 
 	ren State state
 	ren District district
-*/
-use "$dir_data_raw/district_geoloc.dta"
+/* use "$dir_data_raw/district_geoloc.dta"
 	ren latitude_google latitude
 	ren longitude_google longitude
+	* TAMIL NADU,CHENGALPATTU M.G.R. has empty set of coord, drop this row
+	drop if missing(latitude) | missing(longitude) */
 
 * Identifying all districts
 	keep state district latitude longitude
@@ -40,7 +41,7 @@ outsheet longitude_orig latitude_orig longitude_dest latitude_dest using "$dir_s
 
 * If highway distances are to be recalculated, set flag = 1 (details in README)
 	if `redo_highwaydistance' == 1{
-		shell matlab -batch "distance_081721"
+		shell matlab -batch "distance_081721" > matlab_output.log 2>&1
 	}
 		
 cd "$dir"	

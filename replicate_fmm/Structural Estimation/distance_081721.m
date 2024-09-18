@@ -541,7 +541,9 @@ for s = [20,15,30,5,10]
                 temp_dist = cell(K);
                 
            %  parpool(30)  
-            parfor i = 1:K
+            % parfor i = 1:K % my computer seems having memory limitation to do parellel computing.
+            for i = 1:K
+                
                 i
 
                 % here are the coordinates 

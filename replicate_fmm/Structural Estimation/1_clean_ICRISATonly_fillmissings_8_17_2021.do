@@ -75,7 +75,7 @@ save "$dir_scratch/ICRISAT_latlong_$date.dta", replace
 	drop latitude longitude
 	rename StateCapital_lat latitude
 	rename StateCapital_long longitude
-	append using "$dir_scratch/ICRISAT_latlong_$date.dta"
-	drop StateCapital_*
+	/* append using "$dir_scratch/ICRISAT_latlong_$date.dta" */
+	/* drop StateCapital_* */
 	drop tag
 save "$dir_scratch/ICRISAT_latlong_BiggestCity_$date.dta", replace
