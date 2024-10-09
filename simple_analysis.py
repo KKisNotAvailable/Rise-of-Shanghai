@@ -5,6 +5,7 @@ from collections import Counter
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
 
+# write the code in the style align with the upcoming pandas update
 # check out https://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy
 pd.options.mode.copy_on_write = True
 
