@@ -9,7 +9,10 @@ import matplotlib.pyplot as plt
 # check out https://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy
 pd.options.mode.copy_on_write = True
 
-def plot_year_wage_scatter(df: pd.DataFrame, cur_port: int, graph_dir: str = "graphs"):
+def plot_year_wage_scatter(df: pd.DataFrame, cur_port: int, graph_dir: str = "graphs", save_fig=False):
+    '''
+    This function plots the distribution of wage based on the observation year.
+    '''
     df_to_plot = df.loc[df['portcode'] == cur_port, ['year', 'pay']].reset_index(drop=True)
 
     # year_count = df_to_plot.groupby(by='year').size().reset_index(name='counts')
@@ -23,12 +26,20 @@ def plot_year_wage_scatter(df: pd.DataFrame, cur_port: int, graph_dir: str = "gr
     ttl = f'{cur_port}_year_wage_scatter'
     plt.title(ttl)
 
-    plt.savefig(f"{graph_dir}/{ttl}.jpg")
-    plt.close() 
+    if save_fig:
+        plt.savefig(f"{graph_dir}/{ttl}.jpg")
+        plt.close()
+    else:
+        plt.show()
 
     return
 
 def wage_index(locations, data: pd.DataFrame) -> pd.Series:
+    '''
+    This functions makes wage index for each designated area.
+    But actually we don't need this, I misunderstood Terry.
+    What we need is the fixed effect of each location.
+    '''
     print(f'Currently working on location: {locations}')
     if not isinstance(locations, list):
         data = data.drop(columns=['portcode'])
@@ -62,6 +73,12 @@ def wage_index(locations, data: pd.DataFrame) -> pd.Series:
     # 最後有的會少這麼多職業我猜是因為在限制前10年資料下，很多職業就沒了
     return pd.concat([pd.Series([1], index=[f'year_{min_year}']), year_coef])
 
+def hedonic_reg(df, find_fix_cols):
+    '''
+    The main purpose is to find the locational fixed effect, but
+    will also get the fixed effects of some suffix of occupation
+    '''
+
 def analysis(df: pd.DataFrame):
     # ----------
     # Preporcess
@@ -75,8 +92,11 @@ def analysis(df: pd.DataFrame):
 
     df.fillna(nan_to_zero, inplace=True)
 
-    # "promote" means the promotion year, 
+    # Note that "promote" means the promotion year, 
     # none year figures and NaN set to 0 for easier filter later
+    # >> but actually figures smaller than 1800 might be the amount of prommotion,
+    #    if we need a column indicating ever promoted, should use another way
+    #    to preprocess data
     df.loc[df['promote'] < 1800, "promote"] = 0
 
     # "year" means the observation year, has 3 NaNs
@@ -100,6 +120,7 @@ def analysis(df: pd.DataFrame):
     df['tenure'] = df['year'] - df['begin']
     df.loc[df['begin'] == 0, 'tenure'] = 0
 
+
     # --------
     # Analysis
     # --------
@@ -121,42 +142,53 @@ def analysis(df: pd.DataFrame):
     port_freq = Counter(df['portcode'])
     top_ports = port_freq.most_common(top_n)
 
-    # for scatter plot, ignore NaNs. 
-    # But need to report the total count and Na counts.
+    # =======================================
+    #  scatter plot of wage and observe year
+    # =======================================
+    # TODO:  report the total count and Na counts.
     # for cur_port, _ in top_ports:
     #     plot_year_wage_scatter(df, cur_port)
-    #     pass
 
-    # do the hedonic regression
-    variables = ['pay', 'rank_new', 'tenure', 'portcode', 'year']
-    ports = [p for p, _ in top_ports]
+    # ====================
+    #  wage index by area
+    # ====================
+    # variables = ['pay', 'rank_new', 'tenure', 'portcode', 'year']
+    # ports = [p for p, _ in top_ports]
     
-    # Shanghai = 195; Soochow = 435
-    for loc in [195, 435, ports]:
-        if isinstance(loc, list):
-            df_fil = df[df['portcode'].isin(ports)]
-        else:
-            df_fil = df[df['portcode'] == loc]
+    # # Shanghai = 195; Soochow = 435
+    # for loc in [195, 435, ports]:
+    #     if isinstance(loc, list):
+    #         df_fil = df[df['portcode'].isin(ports)]
+    #     else:
+    #         df_fil = df[df['portcode'] == loc]
 
-        rank_freq = Counter(df_fil['rank_new'])
-        top_rank = rank_freq.most_common(top_n)
+    #     rank_freq = Counter(df_fil['rank_new'])
+    #     top_rank = rank_freq.most_common(top_n)
 
-        df_fil = df_fil[df_fil['rank_new'].isin([r for r, _ in top_rank])]
+    #     df_fil = df_fil[df_fil['rank_new'].isin([r for r, _ in top_rank])]
 
-        index_srs = wage_index(loc, df_fil[variables])
+    #     index_srs = wage_index(loc, df_fil[variables])
 
-        print(index_srs)
+    #     print(index_srs)
+
+    # =======================
+    #  location fixed effect
+    # =======================
+
+
     return
 
 
 def main():
-    df = pd.read_excel("data/data_port_processed.xlsm", sheet_name="Sheet1")
+    df = pd.read_excel("data/data_port_processed.xlsm", sheet_name="data")
 
     cols_to_keep = [
         "year", "rank", "begin", "promote", "transfer", "pay", "areacode", 
-        "portcode", "certainty_lvl", "port", "possible_names", "rank_new"
+        "portcode", "certainty_lvl", "port", "possible_names", "rank_new",
+        "suffix_1", "suffix_2", "suffix_3", "suffix_4"
     ]
 
+    # TODO: write as class, and put these two section into __init__
     out_dir = "./output/"
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
