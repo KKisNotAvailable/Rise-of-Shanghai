@@ -73,11 +73,30 @@ def wage_index(locations, data: pd.DataFrame) -> pd.Series:
     # 最後有的會少這麼多職業我猜是因為在限制前10年資料下，很多職業就沒了
     return pd.concat([pd.Series([1], index=[f'year_{min_year}']), year_coef])
 
-def hedonic_reg(df, find_fix_cols):
+def location_fixed_effect(df, locations: list, find_fix_cols: list) -> dict:
     '''
     The main purpose is to find the locational fixed effect, but
     will also get the fixed effects of some suffix of occupation
     '''
+    # step 1. filter the data to include only the given list of location
+
+    # step 2. make year, location, occupation, and suffixes of occupations into dummy.
+    # >> thought: the only numerical variable is tenure...
+    #             would all other categorical variables being dummy make the solution matrix singular?
+
+    # step 3. return the parameters of locations back as a dictionary
+
+def plot_loc():
+    '''
+    Not sure if we will plot other things on the map, but now only consider
+    plotting fixed effect onto the map of China
+    '''
+
+    # step 1. find a china's map
+
+    # step 2. link the locations we have to the locations on the map
+
+    # step 3. might plot a heat map, so will need color bar
 
 def analysis(df: pd.DataFrame):
     # ----------
@@ -137,7 +156,7 @@ def analysis(df: pd.DataFrame):
     df = df.loc[conds]
 
     # TOP N ports
-    top_n = 10
+    top_n = 20
 
     port_freq = Counter(df['portcode'])
     top_ports = port_freq.most_common(top_n)
