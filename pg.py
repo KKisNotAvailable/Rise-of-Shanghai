@@ -2,12 +2,13 @@ import geopandas as gpd
 import pandas as pd
 import numpy as np
 import rasterio
-from rasterio.features import geometry_mask
+from rasterio.features import geometry_mask, rasterize
+from rasterio.transform import from_bounds
 from shapely.geometry import box
 import matplotlib.pyplot as plt
-from skimage.segmentation import find_boundaries
+from skimage.segmentation import find_boundaries # to draw only the border
 
-FMM_REP_DATA_PATH = "replicate_fmm/Data/"
+FMM_REP_DATA_PATH = "replicate_fmm/Data/china/"
 
 '''NOTE
 建議可以查XX省水路輿圖或數位方輿裡面查"省輿圖"
@@ -42,6 +43,7 @@ def peep_geo(map_name):
     )
 
     print(cur_map.crs)
+    print(cur_map.columns)
     print(cur_map.info())
     print(cur_map.head(5))
 
@@ -50,12 +52,13 @@ def peep_geo(map_name):
     # check = cur_map.head(5)
     # check.to_csv(f"{FMM_REP_DATA_PATH}{mn}.csv", index=False)
 
-def plot_test(map_name):
+def contour_matrix(map_name: str) -> np.ndarray:
     '''
-    This is to test how to transform the border / land area to matrix
+    transform the border / land area to matrix and plot
 
-    TODO:
-    1. the ratio of width and height (等比例縮小吧 改個寫法)
+    Return
+    ------
+    2d ndarray
     '''
     cur_map = gpd.read_file(
         f"{FMM_REP_DATA_PATH}CHGis/{map_name}/", 
@@ -71,7 +74,7 @@ def plot_test(map_name):
 
     minx, miny, maxx, maxy = cur_map.total_bounds
 
-    # Calculate the width and height of each grid cell
+    # determine the size of matrix
     cols = int((maxx - minx) / adjust_scale)
     rows = int((maxy - miny) / adjust_scale)
 
@@ -92,23 +95,104 @@ def plot_test(map_name):
         # Update the matrix where the mask is True
         matrix[mask] = 1
 
-    # 但真的在計算的時候陸地用1應該會比較方便吧 不用border
-    border_matrix = find_boundaries(matrix, mode='inner')
+    map_info = {
+        'minx': minx,
+        'miny': miny,
+        'maxx': maxx,
+        'maxy': maxy,
+        'rows': rows,
+        'cols': cols, # would like to check if transform carries the data above, if yes then no need to keep
+        'transform': from_bounds(minx, miny, maxx, maxy, cols, rows),
+        'crs': cur_map.crs
+    }
 
-    # Display the resulting matrix
-    plt.imshow(matrix, cmap='gray', interpolation='none')
-    plt.title("Matrix Representation of the China Map")
-    plt.xlabel("Columns")
-    plt.ylabel("Rows")
-    plt.show()
+    return matrix, map_info
+
+def road_matrix(filename: str):
+    road_data = gpd.read_file(f"{FMM_REP_DATA_PATH}{filename}")
+
+    print(road_data.head())
+
+def line_to_matrix(filename: str, map_info: dict):
+    '''
+    River:
+        'FNODE_', 'TNODE_', 'LENGTH', 'CODED_RIVE', 'CODED_RI_1', 'KEY_ID',
+        'SYSTEM_ID', 'MOUTH', 'ORDER_', 'RIVERS_ID', 'KEY_ID_1', 'NAME_CH',
+        'NAME_FT', 'NAME_PY', 'MIDPOINT_X', 'MIDPOINT_Y', 'geometry'
+    
+    '''
+    cur_lines = gpd.read_file(
+        f"{FMM_REP_DATA_PATH}CHGis/{filename}/", 
+        encoding='utf-8'
+    )
+
+    # Define the transform (maps pixel coordinates to geographic coordinates)
+    transform = map_info['transform']
+
+    # Rasterize the river geometries
+    raster = rasterize(
+        ((geom, 1) for geom in cur_lines['geometry']),
+        out_shape=(map_info['rows'], map_info['cols']),
+        transform=transform,
+        fill=0,  # Value for empty cells
+        all_touched=True,  # Include all pixels touched by river
+    )
+
+    return raster
+
+def plot_matrix(mat: np.ndarray, map_info: dict, title: str = "some title", save_fig=True):
+    n, m = mat.shape
+    fig, ax = plt.subplots()
+    cax = ax.imshow(mat, cmap='gray', interpolation='none')
+    # ax.set_title(title)
+    ax.set_axis_off()
+
+    if save_fig:
+        plt.savefig(
+            f'{FMM_REP_DATA_PATH}raw/{title}.tif', 
+            format='tiff',
+            dpi=600
+        )
+        # with rasterio.open(
+        #     f'{FMM_REP_DATA_PATH}raw/{title}.tif', 'w',
+        #     driver='GTiff',
+        #     height=n,
+        #     width=m,
+        #     count=1,  # Single band
+        #     dtype=rasterio.uint8,
+        #     crs=map_info['crs'],  # WGS84 coordinate system (latitude/longitude)
+        #     transform=map_info['transform'],  # Affine transform (links pixels to geographic coords)
+        # ) as dst:
+        #     dst.write(mat, 1)
+    else:
+        plt.show()
 
 def main():
     # lin = LINESTRING; pgn = POLYGON
-    mn = "v6_1820_coded_rvr_lin_utf"
+    
     mn = "v5_1820_coast_lin"
-    mn = "v6_1820_prov_pgn_utf" # NAME_FT is traditional chinese
     # peep_geo(mn)
-    plot_test(mn)
+
+    # contour
+    cont = "v6_1820_prov_pgn_utf" # NAME_FT is traditional chinese
+    cont_mat, map_info = contour_matrix(cont) # 4761, 6075
+    # plot_matrix(cont_mat, map_info, title='China - outline', save_fig=False)
+
+    # river
+    rvr = "v6_1820_coded_rvr_lin_utf"
+    rvr_mat = line_to_matrix(rvr, map_info=map_info)
+    plot_matrix(rvr_mat, map_info, title='China - rivers', save_fig=False)
+
+    # coast
+    coast = "v5_1820_coast_lin"
+    # coast_mat = line_to_matrix(coast, map_info=map_info)
+    # plot_matrix(coast_mat, map_info, title='China - coastline', save_fig=False)
+
+    # road data
+    road_ming = 'ming_post_station_road.kml'
+    # road_matrix(road_ming)
+
+    print("Done")
 
 
 if __name__ == "__main__":
