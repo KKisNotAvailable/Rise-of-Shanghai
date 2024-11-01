@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 pd.options.mode.copy_on_write = True
 
 THRESHOLD = 100
+MAIN_FILE_PATH = "data/data_port_processed.xlsm"
 
 def plot_year_wage_scatter(df: pd.DataFrame, cur_port: int, graph_dir: str = "graphs", save_fig=False):
     '''
@@ -161,7 +162,7 @@ def plot_loc(fixed_effects: pd.DataFrame):
     '''
     # step 1. map the portcodes to actual chinese or english name
     code_to_name_ch = pd.read_excel(
-        "data/data_port_processed.xlsm", 
+        MAIN_FILE_PATH, 
         sheet_name="unique_name_ch", 
         header=None
     )
@@ -288,7 +289,7 @@ def analysis(df: pd.DataFrame):
 
 
 def main():
-    df = pd.read_excel("data/data_port_processed.xlsm", sheet_name="data")
+    df = pd.read_excel(MAIN_FILE_PATH, sheet_name="data")
 
     cols_to_keep = [
         "year", "rank", "begin", "promote", "transfer", "pay", "areacode", 
