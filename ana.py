@@ -11,6 +11,7 @@ pd.options.mode.copy_on_write = True
 
 THRESHOLD = 100
 MAIN_FILE_PATH = "data/data_port_processed.xlsm"
+TOP_LOCATION_FILE = "data/top_ports_lon_lat.xlsx"
 
 def plot_year_wage_scatter(df: pd.DataFrame, cur_port: int, graph_dir: str = "graphs", save_fig=False):
     '''
