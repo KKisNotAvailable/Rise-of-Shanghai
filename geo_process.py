@@ -13,62 +13,209 @@ from skimage.segmentation import find_boundaries  # to draw only the border
 FMM_REP_DATA_PATH = "replicate_fmm/Data/china/"
 EXTRA_MAP_PATH = "replicate_fmm/Data/ne_10m_admin_0_countries/" # for the sea information near china
 NORMAL_LON_LAT_CRS = 'EPSG:4326'
+CRS_IN_METER = 'EPSG:2333' # CHGis default CRS
 
-# This dict is to set the values for different geometry types
-# >> the reason behind this is to avoid distortion (some data need to transform 
-#    from EPSG:4326 to WPSG:2333), so transform everything first to 4326, and 
-#    back to 2333, we need to keep them in the same geo DataFrame.
-GEO_TYPE_CODE = defaultdict(lambda: 1)
-GEO_TYPE_CODE['LineString'] = 2 # road and river
-GEO_TYPE_CODE['Point'] = 3 # location points
+class ChinaGeoProcessor():
+    def __init__(self, main_map_path: str) -> None:
+        # 1X: Polygon and MultiPolygon, 2X: LineString, 3X: Point (not official code, just to distinguish)
+        self.geotype_code = {
+            'outline': 11,
+            'sea': 12,
+            'river': 21,
+            'road': {'陸': 22, '水': 23, '水陸': 24}, # from column 'note' (originally 'type')
+            'location': 30
+        }
+        self.__filepaths = {
+            'outline': main_map_path
+        } # this will have the same keys as geotype_code
 
-'''NOTE
-建議可以查XX省水路輿圖或數位方輿裡面查"省輿圖"
-https://digitalatlas.ascdc.sinica.edu.tw/
+    def add_sea(self, path: str):
+        self.__filepaths['sea'] = path
 
-Potential Road data
-0. have missing but might be a choice in the future
-   https://see.org.tw/mqrl/mqrlgis1
+    def add_rivers(self, path: str):
+        self.__filepaths['river'] = path
 
-1. university of toronto's rail and road data
-   https://mdl.library.utoronto.ca/collections/geospatial-data/china-historical-roads-and-rail
+    def add_roads(self, path: str):
+        self.__filepaths['road'] = path
 
-2. has map of every province, but not sure have road data (the second link is same thing but might easier to download)
-   http://ccamc.org/chinese_historical_map/index.php
-   http://www.guoxue123.com/other/map/zgmap/015.htm
-   (interactive) https://www.ageeye.cn/china/
+    def add_locations(self, port_path: str = "", add_points: List[List[float]] = [[]]):
+        '''
+        Given the port path and points to add, this function will add a 
+        geoDataFrame to the self.__filepath pending for process with other
+        maps. 
+        Will give an empty dataframe if both of the arguments are empty.
 
-3. the small dotted lines could be the official roads
-   https://openmuseum.tw/muse/digi_object/6e47e7b0da0762633c25a773a6a01d19
+        Parameter
+        ---------
+        port_path: str.
+            Expected to be the file with the ports.
+        add_points: List[List[float]].
+            Expected to be list of points, and each point is a list of lon and lat.
+        '''
+        # TODO: currently ignore the warning, but need to fix:
+        #    HOW TO DEAL WITH EMPTY DATAFRAME (one or both of them)
+        cols_to_keep = ['portcode', 'lon', 'lat']
+        point_df = pd.DataFrame(columns=cols_to_keep)
 
-4. has ming dynasty's official road (interactive map)
-   https://gis.sinica.edu.tw/showwmts/index.php?s=ccts&l=mingtraffic
+        cur_portcode = 1000
+        for i, p in enumerate(add_points):
+            if not p:
+                continue
+            cur_portcode += i
+            new_row = {c: val for c, val in zip(cols_to_keep, [cur_portcode]+p)}
+            point_df = point_df.append(new_row)
 
-5. from palace museum (13排銅版map)
-   https://rarebooks-maps.npm.edu.tw/index.php?act=Archive/drawing/1-20/eyJzZWFyY2giOltdLCJ0cGZpbHRlciI6eyJwcV9zdWJqZWN0Ijp7InRlcm1zIjpbIui8v%2BWcsOmhniJdfX19   
-'''
+        if port_path:
+            ports = pd.read_excel(port_path)
+            ports = ports[cols_to_keep]
+            point_df = pd.concat([ports, point_df], ignore_index=True)
+        
+        point_gdf = gpd.GeoDataFrame(
+            point_df, 
+            geometry=gpd.points_from_xy(point_df['lon'], point_df['lat'])
+        )
+        point_gdf.set_crs(NORMAL_LON_LAT_CRS, inplace=True) # EPSG:4326
+
+        self.__filepaths['location'] = point_gdf
+
+    def generate_matrices(self):
+        '''
+        This function will return a dict of matrices stated to add.
+        
+        Return
+        ------
+            dict. Besides 'location' will be a list of index, all others are
+            map matrices.
+        '''
+        col_to_note = {
+            'outline': 'NAME_FT', # province names
+            'sea': 'SOVEREIGNT', # country names
+            'river': 'NAME_FT', # river names
+            'road': 'type', # 陸, 水, 水陸
+            'location': 'portcode'
+        }
+
+        # ===============
+        #  China Outline
+        # ===============
+        # EPSG:2333
+        cur_map = 'outline'
+        main_gdf = gpd.read_file(
+            self.__filepaths[cur_map],
+            encoding='utf-8'
+        )
+
+        # want to keep only these columns for all of the data, so will need to
+        # rename later for each dataset.
+        cols_to_keep = ['maptype', 'note', 'geometry']
+
+        # 25047~25051 是南沙群島 (萬里長沙, 千里石塘, 曾母暗沙, 東沙, 中沙)
+        main_gdf = main_gdf[main_gdf['SYS_ID'] <= '25047']
+
+        main_gdf['maptype'] = cur_map
+        main_gdf.rename(columns={col_to_note[cur_map]: 'note'}, inplace=True)
+        main_gdf = main_gdf[cols_to_keep]
+
+        # ===========================
+        #  River, Road, and Location
+        # ===========================
+        # river first because need to combine river and outline (both 2333) first
+        # and then turn them into 4326 to combine with road, location, and later sea
+        for cur_map in ['river', 'road', 'location']:
+            if not cur_map in self.__filepaths.keys():
+                # if river is not added, convert the main gdf to lon lat
+                # (if it was added, the conversion will happen after main and
+                # river merged)
+                if cur_map == 'river':
+                    main_gdf = main_gdf.to_crs(NORMAL_LON_LAT_CRS)
+                continue # if this map is not added, ignore it
+
+            # get the gdf
+            if cur_map == 'location':
+                cur_gdf = self.__filepaths[cur_map]
+            else:
+                cur_gdf = gpd.read_file(
+                    self.__filepaths[cur_map],
+                    encoding='utf-8'
+                )
+
+            # later will based on this to give values (on the matrix)
+            cur_gdf['maptype'] = cur_map
+
+            # the original ming traffic data does not include CRS, but it is lon lat
+            if cur_map == 'road':
+                cur_gdf = cur_gdf.set_crs(NORMAL_LON_LAT_CRS)
+
+            # keep the informative column and turn its name to 'note'
+            cur_gdf.rename(columns={col_to_note[cur_map]: 'note'}, inplace=True)
+            cur_gdf = cur_gdf[cols_to_keep]
+
+            main_gdf = pd.concat([main_gdf, cur_gdf], ignore_index=True)
+
+            if cur_map == 'river':
+                main_gdf = main_gdf.to_crs(NORMAL_LON_LAT_CRS)
 
 
-def peep_geo(map_name):
-    cur_map = gpd.read_file(
-        f"{FMM_REP_DATA_PATH}CHGis/{map_name}/",
-        encoding='utf-8'
-    )
+        # Bounds in lon, lat
+        lon_min, lat_min, lon_max, lat_max = main_gdf.total_bounds
 
-    print(cur_map.crs)
-    print(cur_map.columns)
-    print(cur_map.info())
-    print(cur_map.head(5))
+        # =================
+        #  Sea (EPSG:4326)
+        # =================
+        # Steps: set bound -> same prep steps as other maps
+        #    some concern here is the coast line might have some pixel overlapping,
+        #    => will use pixels from Outline if conflict
+        cur_map = 'sea'
+        if cur_map in self.__filepaths.keys():
+            world = gpd.read_file(self.__filepaths[cur_map])
+            east_asia = gpd.clip(world, box(lon_min, lat_min, lon_max, lat_max))
 
-    # print(cur_map[['SYS_ID', 'NAME_FT']])
-    print(cur_map[['SEA_ID', 'SOURCE', 'ARC_ID']])
+            east_asia['maptype'] = cur_map
+            east_asia.rename(columns={col_to_note[cur_map]: 'note'}, inplace=True)
+            east_asia = east_asia[cols_to_keep]
 
-    # Get distribution of "type"
-    # check_dist = cur_map['type'].value_counts()
-    # print(check_dist)
+            main_gdf = pd.concat([main_gdf, east_asia], ignore_index=True)
+        # TODO: should check the issue of wierd blocks at the edges
 
-    # check = cur_map.head(5)
-    # check.to_csv(f"{FMM_REP_DATA_PATH}{mn}.csv", index=False)
+        # =====================
+        #  Start Rasterization
+        # =====================
+        main_gdf = main_gdf.to_crs(CRS_IN_METER) # EPSG:4326 => 2333
+
+        minx, miny, maxx, maxy = main_gdf.total_bounds
+
+        adjust_scale = 1000 # can get this value with int(map_info['transform'].a)
+
+        # determine the size of matrix
+        cols = int((maxx - minx) / adjust_scale)
+        rows = int((maxy - miny) / adjust_scale)
+
+        # for transforming geometry to matrix
+        transform = from_bounds(minx, miny, maxx, maxy, cols, rows)
+
+        # each map type will store a distinct matrix
+        所以要改寫法
+        for _, row in main_gdf.iterrows():
+            # initiate a matrix
+            matrix = np.zeros((rows, cols), dtype=int)
+            # Convert the polygon to a rasterized mask
+            mask = geometry_mask(
+                [row['geometry']], transform=transform, invert=True, out_shape=(rows, cols)
+            )
+
+            # Update the matrix where the mask is True
+            cur_type = row['maptype']
+            if cur_type == 'road': # 陸, 水, 水陸
+                val_to_set = self.geotype_code[cur_type][row['note']]
+            else:
+                val_to_set = self.geotype_code[cur_type]
+
+            matrix[mask] = val_to_set
+
+        print(matrix)
+
+        # 4. 依照matrix裡面的值來切回不同的圖
+        
 
 
 def polygon_to_matrix(cur_map, map_info):
@@ -94,9 +241,6 @@ def polygon_to_matrix(cur_map, map_info):
 def contour_matrix(map_name: str) -> np.ndarray:
     '''
     transform the border / land area to matrix and plot
-    ['SYS_ID', 'NAME_PY', 'NAME_CH', 'NAME_FT', 'NOTE_ID', 'OBJ_TYPE',
-     'GEO_SRC', 'COMPILER', 'GEOCOMP', 'CHECKER', 'ENT_DATE', 'X_COORD',
-     'Y_COORD', 'AREA', 'geometry']
 
     Return
     ------
@@ -128,38 +272,6 @@ def contour_matrix(map_name: str) -> np.ndarray:
         'transform': from_bounds(minx, miny, maxx, maxy, cols, rows),
         'crs': cur_map.crs
     }
-
-    # ======
-    #  Test
-    # ======
-    def test():
-        print(f"The bounds of the original map is: {cur_map.total_bounds}")
-        print(f"The bounds of the normal map is: {normal_lon_lat_map.total_bounds}")
-        crs1 = 'EPSG:4326'
-        crs2 = 'EPSG:2333'
-
-        # 1. take the original bounds, use Transform and compare with normal_map
-        print(">>> Test 1: EPSG:2333 to EPSG:4326")
-        transformer1 = Transformer.from_crs(crs2, crs1, always_xy=True)
-        print(f"EPSG:2333 min x and y: {minx}, {miny}")
-        lon_t, lat_t = transformer1.transform(minx, miny)
-        print(f"EPSG:4326 min x and y: {lon_t}, {lat_t}")
-
-        print(f"EPSG:2333 max x and y: {maxx}, {maxy}")
-        lon_t, lat_t = transformer1.transform(maxx, maxy)
-        print(f"EPSG:4326 max x and y: {lon_t}, {lat_t}")
-
-        # 2. take (0,0) times from_bound, and compare with original bound
-        lon_t, lat_t = map_info['transform'] * (0,0)
-        print("The (0,0) pair is", lon_t, lat_t)
-
-        # 3. transform the normal map's bound to 2333
-        print(">>> Test 3: EPSG:4326 to EPSG:2333")
-        transformer2 = Transformer.from_crs(crs1, crs2, always_xy=True)
-        x, y, _, _ = normal_lon_lat_map.total_bounds
-        print(f"EPSG:4326 min x and y: {x}, {y}")
-        lon_t, lat_t = transformer2.transform(x, y)
-        print(f"EPSG:2333 min x and y: {lon_t}, {lat_t}")
 
     # Rasterize the polygons
     matrix = polygon_to_matrix(cur_map=cur_map, map_info=map_info)
@@ -359,82 +471,17 @@ def get_locations_mat_idx(loc_df: pd.DataFrame, map_info):
     return [[r, c] for r, c in zip(rows_idx, cols_idx)]
 
 
-def test_crs_transform(pt):
-    '''
-    SUPER WIERD! The following geo point transformation works as I thought
-    but in our map transformation it was not like this...
-
-    Ans: Since 2333 is in meters and 4326 is degree, and the direct transform
-         back and forth gets the same result with the same default setting. 
-         However, transforming the entire map would include the information of 
-         the bounds, thus the projection would be different accordingly.
-    '''
-    lon, lat = pt
-    crs1 = 'EPSG:4326'
-    crs2 = 'EPSG:2333'
-
-    transformer1 = Transformer.from_crs(crs1, crs2, always_xy=True)
-    lon_t, lat_t = transformer1.transform(lon, lat)
-
-    transformer2 = Transformer.from_crs(crs2, crs1, always_xy=True)
-    lon_t, lat_t = transformer2.transform(lon_t, lat_t)
-
-    print(f"Original point: {lon}, {lat}")
-    print(f"Transformed twice point: {lon_t}, {lat_t}")
-
-
 def main():
-    # lin = LINESTRING; pgn = POLYGON
-    # bounds: [ 69.75457966  15.78138    144.75150107  55.92380503]
-    # bounds: [15923439.00897854  1745462.32141839 21998532.53324068  6506625.70738582]
-    # transform:
-    #   | 1000.02, 0.00, 15923439.01|
-    #   | 0.00,-1000.03, 6506625.71|
-    #   | 0.00, 0.00, 1.00|
+    cgp = ChinaGeoProcessor(
+        main_map_path=f"{FMM_REP_DATA_PATH}CHGis/v6_1820_prov_pgn_utf/"
+    )
 
-    # test_crs_transform([121.564558, 25.03746])
+    cgp.add_sea(path="replicate_fmm/Data/ne_10m_admin_0_countries/")
+    cgp.add_rivers(path=f"{FMM_REP_DATA_PATH}CHGis/v6_1820_coded_rvr_lin_utf/")
+    cgp.add_roads(path=f"{FMM_REP_DATA_PATH}ming_traffic/")
+    cgp.add_locations(port_path='data/top_ports_lon_lat.xlsx')
 
-    mn = "v5_1820_coast_lin"
-    # peep_geo(mn)
-
-    # NOTE: For all the following matices, I assume them to including only 0 and 1
-    # contour
-    cont = "v6_1820_prov_pgn_utf"  # NAME_FT is traditional chinese
-    cont_mat, map_info = contour_matrix(cont)  # 4761, 6075
-    # plot_matrix(cont_mat, title='China - outline', save_fig=False)
-
-    # river
-    rvr = "v6_1820_coded_rvr_lin_utf"
-    # rvr_mat = line_to_matrix(rvr, map_info=map_info)
-    # plot_matrix(rvr_mat, title='China - rivers', save_fig=False)
-
-    # road data
-    road_ming = 'ming_traffic'
-    # road_mat = line_to_matrix(road_ming, map_info=map_info)
-    # plot_matrix(road_mat, title='China - Ming Roads', save_fig=False)
-
-    # NOTE: I'm thinking do we need coast anymore? since there's no reason to 
-    #       limit sailing only along the coast, should there be a huge bay but 
-    #       the destination need to ignore the bay and sail straightly,
-    #       in such case, limiting to coast line would overestimate the time
-    # coast
-    coast = "v5_1820_coast_lin"
-    # coast_mat = line_to_matrix(coast, map_info=map_info)
-    # plot_matrix(coast_mat, title='China - coastline', save_fig=False)
-
-    # sea data
-    sea_mat = sea_matrix(map_info=map_info)
-    # plot_matrix(sea_mat, title='China - sea nearby', save_fig=False)
-
-    # location points
-    # locations = pd.read_excel('data/top_ports_lon_lat.xlsx')
-    # keep_cols = ['portcode', 'name_ch', 'lon', 'lat'] # 'customs'
-    # loc_idx = get_locations_mat_idx(loc_df=locations[keep_cols], map_info=map_info)
-
-    # add_points_on_map(cont_mat, loc_idx)
-    # plot_matrix(cont_mat, title='China - outline', save_fig=False)
-
-    print("Done")
+    cgp.generate_matrices()
 
 
 if __name__ == "__main__":
