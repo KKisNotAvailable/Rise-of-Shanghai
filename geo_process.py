@@ -86,8 +86,11 @@ class ChinaGeoProcessor():
         
         Return
         ------
+        matrices
             dict. Besides 'location' will be a list of index, all others are
             map matrices.
+        map_info
+            dict. Includes transform for maps and the crs.
         '''
         col_to_note = {
             OUTLINE: 'NAME_FT', # province names
@@ -223,7 +226,7 @@ class ChinaGeoProcessor():
             )
 
             if type == LOCATION:
-                matrices[type] = np.argwhere(matrix==1) # get the indices of True in the matrix
+                matrices[type] = np.argwhere(matrix==bv) # get the indices of True in the matrix
             else:
                 matrices[type] = matrix
                 
@@ -260,8 +263,10 @@ class ChinaGeoProcessor():
 
 def main():
     start_time = time.time()
+    out_path = "output/"
     cgp = ChinaGeoProcessor(
-        main_map_path=f"{FMM_REP_DATA_PATH}CHGis/v6_1820_prov_pgn_utf/"
+        main_map_path=f"{FMM_REP_DATA_PATH}CHGis/v6_1820_prov_pgn_utf/",
+        out_path=out_path
     )
 
     cgp.add_sea(path="replicate_fmm/Data/ne_10m_admin_0_countries/")
@@ -273,7 +278,8 @@ def main():
 
     for t, m in mats.items():
         if t == LOCATION:
-            pass # save the locations to some txt file or csv
+            df = pd.DataFrame(m, columns=['row', 'col'])
+            df.to_csv(f'{out_path}China_customs.csv', index=False)
         else:
             cgp.plot_matrix(mat=m, map_info=map_info, title=t, save_im=True)
 
