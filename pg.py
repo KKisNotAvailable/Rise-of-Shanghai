@@ -108,7 +108,10 @@ def contour_matrix(map_name: str) -> np.ndarray:
     )
 
     # 25047~25051 是南沙群島 (萬里長沙, 千里石塘, 曾母暗沙, 東沙, 中沙)
-    cur_map = cur_map[cur_map['SYS_ID'] <= '25047']
+    cur_map = cur_map[cur_map['SYS_ID'] < '25047']
+
+    cur_map = cur_map.to_crs('EPSG:4326')
+    cur_map = cur_map.to_crs('EPSG:2333')
 
     minx, miny, maxx, maxy = cur_map.total_bounds
 
@@ -400,7 +403,7 @@ def main():
     # NOTE: For all the following matices, I assume them to including only 0 and 1
     # contour
     cont = "v6_1820_prov_pgn_utf"  # NAME_FT is traditional chinese
-    cont_mat, map_info = contour_matrix(cont)  # 4761, 6075
+    cont_mat, map_info = contour_matrix(cont)  # 4497, 6075
     # plot_matrix(cont_mat, title='China - outline', save_fig=False)
 
     # river
@@ -423,7 +426,7 @@ def main():
     # plot_matrix(coast_mat, title='China - coastline', save_fig=False)
 
     # sea data
-    sea_mat = sea_matrix(map_info=map_info)
+    # sea_mat = sea_matrix(map_info=map_info)
     # plot_matrix(sea_mat, title='China - sea nearby', save_fig=False)
 
     # location points
