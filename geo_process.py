@@ -8,18 +8,23 @@ from rasterio.features import geometry_mask, rasterize
 from rasterio.transform import from_bounds
 from shapely.geometry import box, Point
 import matplotlib.pyplot as plt
-from pyproj import Transformer
+from pyproj import Transformer  # for transforming geometries between CRS
 from typing import List
 from skimage.segmentation import find_boundaries  # to draw only the border
 import time
 
 FMM_REP_DATA_PATH = "replicate_fmm/Data/china/"
-EXTRA_MAP_PATH = "replicate_fmm/Data/ne_10m_admin_0_countries/" # for the sea information near china
+# for the sea information near china
+EXTRA_MAP_PATH = "replicate_fmm/Data/ne_10m_admin_0_countries/"
 NORMAL_LON_LAT_CRS = 'EPSG:4326'
-CRS_IN_METER = 'EPSG:2333' # CHGis default CRS
+CRS_IN_METER = 'EPSG:2333'  # CHGis default CRS
 # To avoid typo:
-OUTLINE = 'outline'; SEA = 'sea'; RIVER = 'river'; ROAD = 'road'
+OUTLINE = 'outline'
+SEA = 'sea'
+RIVER = 'river'
+ROAD = 'road'
 LOCATION = 'location'
+
 
 class ChinaGeoProcessor():
     def __init__(self, main_map_path: str, out_path: str = 'output/') -> None:
@@ -52,29 +57,31 @@ class ChinaGeoProcessor():
         add_points: List[List[float]].
             Expected to be list of points, and each point is a list of lon and lat.
         '''
-        # TODO: currently ignore the warning, but need to fix:
-        #    HOW TO DEAL WITH EMPTY DATAFRAME (one or both of them)
         cols_to_keep = ['portcode', 'lon', 'lat']
-        point_df = pd.DataFrame(columns=cols_to_keep)
+        fake_data = [[0, 0, 0]]  # avoid concat empty dataframe later
+        point_df = pd.DataFrame(fake_data, columns=cols_to_keep)
 
-        cur_portcode = 1000
+        cur_ptcode = 1000
         for i, p in enumerate(add_points):
             if not p:
                 continue
-            cur_portcode += i
-            new_row = {c: val for c, val in zip(cols_to_keep, [cur_portcode]+p)}
+            cur_ptcode += i
+            new_row = {c: val for c, val in zip(cols_to_keep, [cur_ptcode]+p)}
             point_df = point_df.append(new_row)
 
         if port_path:
             ports = pd.read_excel(port_path)
             ports = ports[cols_to_keep]
             point_df = pd.concat([ports, point_df], ignore_index=True)
-        
+
+        # 0 is fake data, not a valid code in our data
+        point_df = point_df[point_df['portcode'] != 0]
+
         point_gdf = gpd.GeoDataFrame(
-            point_df, 
+            point_df,
             geometry=gpd.points_from_xy(point_df['lon'], point_df['lat'])
         )
-        point_gdf.set_crs(NORMAL_LON_LAT_CRS, inplace=True) # EPSG:4326
+        point_gdf.set_crs(NORMAL_LON_LAT_CRS, inplace=True)  # EPSG:4326
 
         self.__filepaths[LOCATION] = point_gdf
 
@@ -83,7 +90,7 @@ class ChinaGeoProcessor():
     def generate_matrices(self):
         '''
         This function will return a dict of matrices stated to add.
-        
+
         Return
         ------
         matrices
@@ -93,10 +100,10 @@ class ChinaGeoProcessor():
             dict. Includes transform for maps and the crs.
         '''
         col_to_note = {
-            OUTLINE: 'NAME_FT', # province names
-            SEA: 'SOVEREIGNT', # country names
-            RIVER: 'NAME_FT', # river names
-            ROAD: 'type', # 陸, 水, 水陸
+            OUTLINE: 'NAME_FT',  # province names
+            SEA: 'SOVEREIGNT',  # country names
+            RIVER: 'NAME_FT',  # river names
+            ROAD: 'type',  # 陸, 水, 水陸
             LOCATION: 'portcode'
         }
 
@@ -136,12 +143,13 @@ class ChinaGeoProcessor():
                 if cur_map == RIVER:
                     print(f"No {cur_map}")
                     main_gdf = main_gdf.to_crs(NORMAL_LON_LAT_CRS)
-                continue # if this map is not added, ignore it
+                continue  # if this map is not added, ignore it
 
             print(f"With {cur_map}")
             # get the gdf
             if cur_map == LOCATION:
-                cur_gdf = self.__filepaths[cur_map]
+                # avoid changes apply to the original dataframe
+                cur_gdf = self.__filepaths[cur_map].copy()
             else:
                 cur_gdf = gpd.read_file(
                     self.__filepaths[cur_map],
@@ -156,14 +164,14 @@ class ChinaGeoProcessor():
                 cur_gdf = cur_gdf.set_crs(NORMAL_LON_LAT_CRS)
 
             # keep the informative column and turn its name to 'note'
-            cur_gdf.rename(columns={col_to_note[cur_map]: 'note'}, inplace=True)
+            cur_gdf.rename(
+                columns={col_to_note[cur_map]: 'note'}, inplace=True)
             cur_gdf = cur_gdf[cols_to_keep]
 
             main_gdf = pd.concat([main_gdf, cur_gdf], ignore_index=True)
 
             if cur_map == RIVER:
                 main_gdf = main_gdf.to_crs(NORMAL_LON_LAT_CRS)
-
 
         # Bounds in lon, lat
         # [ 69.75457966  18.160896   144.75150107  55.92380503]
@@ -178,10 +186,12 @@ class ChinaGeoProcessor():
         cur_map = SEA
         if cur_map in self.__filepaths.keys():
             world = gpd.read_file(self.__filepaths[cur_map])
-            east_asia = gpd.clip(world, box(lon_min, lat_min, lon_max, lat_max))
+            east_asia = gpd.clip(world, box(
+                lon_min, lat_min, lon_max, lat_max))
 
             east_asia['maptype'] = cur_map
-            east_asia.rename(columns={col_to_note[cur_map]: 'note'}, inplace=True)
+            east_asia.rename(
+                columns={col_to_note[cur_map]: 'note'}, inplace=True)
             east_asia = east_asia[cols_to_keep]
 
             main_gdf = pd.concat([main_gdf, east_asia], ignore_index=True)
@@ -200,22 +210,33 @@ class ChinaGeoProcessor():
         map_info['crs'] = main_gdf.crs
 
         # base value
-        bv = 250 # lower than 255
+        bv = 250  # lower than 255
 
-        # each map type will store a distinct matrix, 
+        # each map type will store a distinct matrix,
         # except for location, it will be list of indices of the locations in the matrix
         matrices = {}
+
+        sub_vals = {
+            ROAD: {'陸': bv, '水': bv//2, '水陸': bv//5},
+            LOCATION: dict(zip(
+                self.__filepaths[LOCATION]['portcode'],
+                self.__filepaths[LOCATION].index + 1
+            ))
+        }
+
         for type in self.__filepaths.keys():
             cur_type_map = main_gdf[main_gdf['maptype'] == type]
 
-            if type == ROAD:
+            # Since directly rasterize wouldn't retain the information for
+            # each location point. I will use portcodes' index as the value
+            if type in [ROAD, LOCATION]:
                 geom_vals = [
-                    (geom, bv if note == '陸' else bv//2 if note == '水' else bv//5)
+                    (geom, sub_vals[type].get(note, 0))
                     for geom, note in zip(cur_type_map.geometry, cur_type_map['note'])
                 ]
             else:
                 geom_vals = [(geom, bv) for geom in cur_type_map.geometry]
-            
+
             matrix = rasterize(
                 geom_vals,
                 out_shape=(rows, cols),
@@ -226,14 +247,26 @@ class ChinaGeoProcessor():
             )
 
             if type == LOCATION:
-                matrices[type] = np.argwhere(matrix==bv) # get the indices of True in the matrix
+                to_df = []
+                # This step takes some time
+                for ptcode, val in sub_vals[type].items():
+                    new_row = [ptcode] + np.argwhere(matrix == val)[0].tolist()
+                    to_df.append(new_row)
+
+                out_df = pd.DataFrame(
+                    to_df, columns=['portcode', 'row', 'col'])
+
+                matrices[type] = pd.merge(
+                    out_df, self.__filepaths[type].drop(columns=['geometry']),
+                    on='portcode', how='left'
+                )
             else:
                 matrices[type] = matrix
-                
+
             print(f"Matrix of {type} Done!")
 
         return matrices, map_info
-    
+
     def plot_matrix(self, mat: np.ndarray, map_info: dict,
                     title: str = "title", save_im=False):
         '''Save the raster as a GeoTIFF'''
@@ -259,7 +292,7 @@ class ChinaGeoProcessor():
             print(f"Map of {title} saved.")
         else:
             plt.show()
-        
+
 
 def main():
     start_time = time.time()
@@ -269,17 +302,17 @@ def main():
         out_path=out_path
     )
 
-    cgp.add_sea(path="replicate_fmm/Data/ne_10m_admin_0_countries/")
-    cgp.add_rivers(path=f"{FMM_REP_DATA_PATH}CHGis/v6_1820_coded_rvr_lin_utf/")
-    cgp.add_roads(path=f"{FMM_REP_DATA_PATH}ming_traffic/")
+    # cgp.add_sea(path="replicate_fmm/Data/ne_10m_admin_0_countries/")
+    # cgp.add_rivers(path=f"{FMM_REP_DATA_PATH}CHGis/v6_1820_coded_rvr_lin_utf/")
+    # cgp.add_roads(path=f"{FMM_REP_DATA_PATH}ming_traffic/")
     cgp.add_locations(port_path='data/top_ports_lon_lat.xlsx')
 
     mats, map_info = cgp.generate_matrices()
 
     for t, m in mats.items():
         if t == LOCATION:
-            df = pd.DataFrame(m, columns=['row', 'col'])
-            df.to_csv(f'{out_path}China_customs.csv', index=False)
+            # m.to_csv(f'{out_path}China_customs.csv', index=False)
+            m.to_stata(f'{out_path}China_customs.dta', write_index=False)
         else:
             cgp.plot_matrix(mat=m, map_info=map_info, title=t, save_im=True)
 
