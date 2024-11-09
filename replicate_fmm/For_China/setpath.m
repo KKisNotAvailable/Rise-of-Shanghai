@@ -15,4 +15,4 @@ dir_structural = strcat(dir_root, 'For_China/');
 parpool_workers = 6; %% was 20
 
 %% set data version by date
-data_version = "_081721";
+data_version = "_110924";

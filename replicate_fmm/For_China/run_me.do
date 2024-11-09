@@ -11,12 +11,12 @@ global dir_scratch "$dir_data/scratch"
 /* global dir_figures "$dropbox/Figures" */
 /* global dir_tables "$dropbox/Tables" */
 /* global dir_setup "$dropbox/setup" */
-global date = "081721"
+global date = "110924"
 cd "$dir"
 
 set maxvar 120000, perm
 
-include "distance_081721.do" // note that this calls distance_081721.m SYNCED
+include "distance_110924.do" // note that this calls distance_081721.m SYNCED
 
 
 ****************
