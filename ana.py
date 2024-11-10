@@ -1,9 +1,11 @@
 import pandas as pd
 import os
 import numpy as np
+import geopandas as gpd
 from collections import Counter
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
+from shapely.geometry import Point, box
 
 # write the code in the style align with the upcoming pandas update
 # check out https://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy
@@ -12,12 +14,15 @@ pd.options.mode.copy_on_write = True
 THRESHOLD = 100
 MAIN_FILE_PATH = "data/data_port_processed.xlsm"
 TOP_LOCATION_FILE = "data/top_ports_lon_lat.xlsx"
+NORMAL_LON_LAT_CRS = 'EPSG:4326'
+
 
 def plot_year_wage_scatter(df: pd.DataFrame, cur_port: int, graph_dir: str = "graphs", save_fig=False):
     '''
     This function plots the distribution of wage based on the observation year.
     '''
-    df_to_plot = df.loc[df['portcode'] == cur_port, ['year', 'pay']].reset_index(drop=True)
+    df_to_plot = df.loc[df['portcode'] == cur_port,
+                        ['year', 'pay']].reset_index(drop=True)
 
     # year_count = df_to_plot.groupby(by='year').size().reset_index(name='counts')
     # job_count = df_to_plot.groupby(by='rank').size().reset_index(name='counts')
@@ -38,6 +43,7 @@ def plot_year_wage_scatter(df: pd.DataFrame, cur_port: int, graph_dir: str = "gr
 
     return
 
+
 def wage_index(locations, data: pd.DataFrame) -> pd.Series:
     '''
     This functions makes wage index for each designated area.
@@ -53,7 +59,8 @@ def wage_index(locations, data: pd.DataFrame) -> pd.Series:
     first_n_year = data['year'].sort_values().drop_duplicates().head(first_n)
     data = data[data['year'].isin([r for r in first_n_year])]
 
-    min_year = min(data['year']) # for dropping the first year-col as base year
+    # for dropping the first year-col as base year
+    min_year = min(data['year'])
 
     cols_to_dum = [c for c in data.columns if c not in ['pay', 'tenure']]
     data = pd.get_dummies(data, columns=cols_to_dum)
@@ -77,11 +84,12 @@ def wage_index(locations, data: pd.DataFrame) -> pd.Series:
     # 最後有的會少這麼多職業我猜是因為在限制前10年資料下，很多職業就沒了
     return pd.concat([pd.Series([1], index=[f'year_{min_year}']), year_coef])
 
+
 def location_fixed_effect(df: pd.DataFrame, suffixes: list, locations: list = [], display_fit_result=False) -> pd.DataFrame:
     '''
     The main purpose is to find the locational fixed effect, but
     will also get the fixed effects of some suffix of occupation
-    
+
     Since we only care about the location fixed effect, choosing which occupation or year
     as the reference would not matter, since they don't affect the coefs of the locations. 
     '''
@@ -98,7 +106,7 @@ def location_fixed_effect(df: pd.DataFrame, suffixes: list, locations: list = []
     for cur_cat in cat_cols:
         counts = df[cur_cat].value_counts()
         df = df[df[cur_cat].map(counts) >= THRESHOLD].reset_index(drop=True)
-    
+
     # step 3. make year, location, occupation, and suffixes of occupations into dummy.
     # set the highest frequency or lowest paid occupation as the reference category
     top_freq_job = df['rank_new'].value_counts().idxmax()
@@ -109,12 +117,13 @@ def location_fixed_effect(df: pd.DataFrame, suffixes: list, locations: list = []
     cur_ref_job = cheapest_job
     # Reorder the 'rank_new' column so that the most frequent category is first
     df['rank_new'] = pd.Categorical(
-        df['rank_new'], 
-        categories=[cur_ref_job] + [cat for cat in df['rank_new'].unique() if cat != cur_ref_job],
+        df['rank_new'],
+        categories=[cur_ref_job] +
+        [cat for cat in df['rank_new'].unique() if cat != cur_ref_job],
         ordered=True
     )
 
-    for c in cat_cols: # show the dropped category for each variable
+    for c in cat_cols:  # show the dropped category for each variable
         print(f"{c} reference cat: {pd.Categorical(df[c]).categories[0]}")
 
     # will add back to the output later: fixed effect = 0
@@ -125,10 +134,10 @@ def location_fixed_effect(df: pd.DataFrame, suffixes: list, locations: list = []
     # step 4. make X and y for OLS regression
     X = pd.concat(
         [
-            df.filter(like='tenure'), 
-            df.filter(like='year_'), 
-            df.filter(like='portcode_'), 
-            df.filter(like='rank_new_'), 
+            df.filter(like='tenure'),
+            df.filter(like='year_'),
+            df.filter(like='portcode_'),
+            df.filter(like='rank_new_'),
             df.filter(like='suffix_')
         ],
         axis=1
@@ -138,20 +147,36 @@ def location_fixed_effect(df: pd.DataFrame, suffixes: list, locations: list = []
     y = df['pay']
 
     model = sm.OLS(y, X).fit()
-    
+
     if display_fit_result:
         print(model.summary())
 
     # step 5. get the coefs as location fixed effect
-    params = model.params # basically a pd.Series, with the dummy names as the index
-    params.rename('coef', inplace=True) # for later locate this column
-    portcode_params = params[params.index.str.contains('portcode')].reset_index()
-    portcode_params['portcode'] = portcode_params['index'].str.strip("portcode_").astype(int)
+    params = model.params  # basically a pd.Series, with the dummy names as the index
+    params.rename('coef', inplace=True)  # for later locate this column
+    portcode_params = params[params.index.str.contains(
+        'portcode')].reset_index()
+    portcode_params['portcode'] = portcode_params['index'].str.strip(
+        "portcode_").astype(int)
 
     portcode_params = portcode_params[['portcode', 'coef']]
     portcode_params.loc[len(portcode_params)] = [dropped_loc, 0]
 
     return portcode_params
+
+
+def map_display(gdf):
+    # Plot the GeoDataFrame
+    fig, ax = plt.subplots(figsize=(12, 8))
+    gdf.plot(ax=ax, color='lightblue', edgecolor='black')
+
+    # Customize the plot
+    ax.set_title('Map Display')
+    ax.set_axis_off()  # Hide the axis for better visual display
+
+    # Show the plot
+    plt.show()
+
 
 def plot_loc(fixed_effects: pd.DataFrame):
     '''
@@ -161,30 +186,72 @@ def plot_loc(fixed_effects: pd.DataFrame):
        如果同個prefecture有重複的話就留比較高的。
     2. treaty port的prefecture可以特別標出來。
     '''
-    # step 1. map the portcodes to actual chinese or english name
-    code_to_name_ch = pd.read_excel(
-        MAIN_FILE_PATH, 
-        sheet_name="unique_name_ch", 
-        header=None
-    )
-    code_to_name_ch = code_to_name_ch[[0, 1]] # the first two columns
-    code_to_name_ch.columns = ['name_ch', 'portcode']
+    # step 1. map the portcodes to name_ch and lon-lat
+    code_to_name_ch = pd.read_excel(TOP_LOCATION_FILE)
+    code_to_name_ch = code_to_name_ch[['portcode', 'name_ch', 'lon', 'lat']]
 
     fixed_effects = pd.merge(
         fixed_effects, code_to_name_ch, on='portcode', how='left'
     )
-    print(fixed_effects)
-    # 至少選出來的這44個地方要確定具體地點
-    # => 看能不能用有經緯度那本書確認，然後再用經緯度來判斷位於哪個地級 (prefecture)裡
+
+    geometry = [
+        Point(xy) for xy in zip(fixed_effects['lon'], fixed_effects['lat'])]
+    fixed_effects = gpd.GeoDataFrame(
+        fixed_effects, geometry=geometry, crs=NORMAL_LON_LAT_CRS)
 
     # step 2. determine whether these ports are in the same prefecture,
     #         keep the highest fixed effect should there be any duplicate
+    # 'SYS_ID', 'NAME_PY', 'NAME_CH', 'NAME_FT', 'PRES_LOC', 'TYPE_PY',
+    # 'TYPE_CH', 'LEV_RANK', 'BEG_YR', 'BEG_RULE', 'END_YR', 'END_RULE',
+    # 'DYN_PY', 'DYN_CH', 'LEV1_PY', 'LEV1_CH', 'NOTE_ID', 'OBJ_TYPE',
+    # 'GEO_SRC', 'COMPILER', 'GEOCOMP', 'CHECKER', 'ENT_DATE', 'X_COORD',
+    # 'Y_COORD', 'AREA', 'geometry'
+    china_gdf = gpd.read_file(
+        "replicate_fmm/Data/china/CHGis/v6_1820_pref_pgn_utf/",
+        encoding='utf-8'
+    )
 
-    # step 0. find a china's map
+    # 南沙群島: 萬里長沙, 千里石塘, None (should be 曾母暗沙), 東沙, None (should be 中沙)
+    south_islands = ['2103', '2104', '2105', '2106', '2107']
+    china_gdf = china_gdf[~china_gdf['SYS_ID'].isin(south_islands)]
 
-    # step 3. link the locations we have to the locations on the map
+    china_gdf = china_gdf[['SYS_ID', 'NAME_FT', 'geometry']]\
+        .to_crs(NORMAL_LON_LAT_CRS)
 
-    # step 4. might plot a heat map, so will need color bar
+    # get the prefetures where the points belong to
+    fixed_effects = gpd.sjoin(
+        fixed_effects, china_gdf, how='left', predicate='within')
+
+    # keep the highest coef for the same SYS_ID
+    fixed_effects = fixed_effects.loc[
+        fixed_effects.groupby('SYS_ID')['coef'].idxmax()]\
+        .reset_index(drop=True)
+
+    # TODO: might want to get the dropped portcodes
+
+    # step 3. might plot a heat map, so will need color bar
+    to_plot_gdf = pd.merge(
+        china_gdf, fixed_effects[['SYS_ID', 'coef']], on='SYS_ID', how='left')
+
+    num_groups = 5
+    to_plot_gdf['coef_group'] = pd.qcut(
+        to_plot_gdf['coef'], num_groups, labels=False)
+
+    # Plot the map, using 'coef_group' for coloring
+    fig, ax = plt.subplots(figsize=(12, 8))
+    to_plot_gdf.plot(
+        column='coef_group', cmap='viridis', linewidth=0.8, ax=ax,
+        edgecolor='black', legend=True,
+        missing_kwds={"color": "lightgray", "label": "No data"}
+    )
+
+    # Customize the plot
+    ax.set_title('Location Fixed Effects')
+    ax.set_axis_off()
+
+    # Show the plot
+    plt.show()
+
 
 def analysis(df: pd.DataFrame):
     # ============
@@ -199,7 +266,7 @@ def analysis(df: pd.DataFrame):
 
     df.fillna(nan_to_zero, inplace=True)
 
-    # Note that "promote" means the promotion year, 
+    # Note that "promote" means the promotion year,
     # none year figures and NaN set to 0 for easier filter later
     # >> but actually figures smaller than 1800 might be the amount of prommotion,
     #    if we need a column indicating ever promoted, should use another way
@@ -227,15 +294,15 @@ def analysis(df: pd.DataFrame):
     df['tenure'] = df['year'] - df['begin']
     df.loc[df['begin'] == 0, 'tenure'] = 0
 
-
     # ==========
     #  Analysis
     # ==========
     # filters for analysis
-    cond_c0 = df['certainty_lvl'] == 0 # 2274; 1: 859
-    cond_c2 = df['certainty_lvl'] == 2 # 6445
-    cond_c3 = df['certainty_lvl'] == 3 # 61351
-    cond_normalpay = df['pay'] < 1000 # > 1000 cases: 22, one in shashi 1116, other in hankow
+    cond_c0 = df['certainty_lvl'] == 0  # 2274; 1: 859
+    cond_c2 = df['certainty_lvl'] == 2  # 6445
+    cond_c3 = df['certainty_lvl'] == 3  # 61351
+    # > 1000 cases: 22, one in shashi 1116, other in hankow
+    cond_normalpay = df['pay'] < 1000
     cond_positivepay = df['pay'] > 0
 
     # can apply other conds with '&' or '|'
@@ -261,7 +328,7 @@ def analysis(df: pd.DataFrame):
     #  wage index by area
     # --------------------
     # variables = ['pay', 'rank_new', 'tenure', 'portcode', 'year']
-    
+
     # # Shanghai = 195; Soochow = 435
     # for loc in [195, 435, top_ports]:
     #     if isinstance(loc, list):
@@ -293,7 +360,7 @@ def main():
     df = pd.read_excel(MAIN_FILE_PATH, sheet_name="data")
 
     cols_to_keep = [
-        "year", "rank", "begin", "promote", "transfer", "pay", "areacode", 
+        "year", "rank", "begin", "promote", "transfer", "pay", "areacode",
         "portcode", "certainty_lvl", "port", "possible_names", "rank_new",
         "suffix_1", "suffix_2", "suffix_3", "suffix_4"
     ]
