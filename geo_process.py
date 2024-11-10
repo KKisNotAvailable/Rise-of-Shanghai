@@ -10,6 +10,7 @@ from shapely.geometry import box, Point
 import matplotlib.pyplot as plt
 from pyproj import Transformer  # for transforming geometries between CRS
 from typing import List
+from geopy.distance import geodesic
 from skimage.segmentation import find_boundaries  # to draw only the border
 import time
 
@@ -315,6 +316,27 @@ def main():
             m.to_stata(f'{out_path}China_customs.dta', write_index=False)
         else:
             cgp.plot_matrix(mat=m, map_info=map_info, title=t, save_im=True)
+
+    # =========================================
+    #  Get Approximate Distance Between Pixels
+    # =========================================
+    # Since we are using EPSG:4326, which is in degree, we need to do calculation
+    # if in other CRS, these two values could directly in meters.
+    pixel_width_degree = map_info['transform'][0]
+    pixel_height_degree = abs(map_info['transform'][4])
+
+    # Assuming at the middle of China
+    lat1 = 32
+    lon1 = 110
+    lon2 = lon1 + pixel_width_degree
+    lat2 = lat1 + pixel_height_degree
+
+    # Get distance between two points
+    distance_width = geodesic((lat1, lon1), (lat1, lon2)).meters
+    distance_height = geodesic((lat1, lon1), (lat2, lon1)).meters
+
+    print(f"Approximate pixel width in meters: {distance_width}")  # 1181
+    print(f"Approximate pixel height in meters: {distance_height}")  # 997
 
     end_time = time.time()
     print(f"Time taken: {end_time - start_time:.4f} seconds")
