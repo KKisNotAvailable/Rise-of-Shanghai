@@ -240,9 +240,9 @@ def plot_loc(fixed_effects: pd.DataFrame):
     # Plot the map, using 'coef_group' for coloring
     fig, ax = plt.subplots(figsize=(12, 8))
     to_plot_gdf.plot(
-        column='coef_group', cmap='viridis', linewidth=0.8, ax=ax,
-        edgecolor='black', legend=True,
-        missing_kwds={"color": "lightgray", "label": "No data"}
+        column='coef_group', cmap='viridis', linewidth=0.4, ax=ax,
+        edgecolor='gray', legend=True,
+        missing_kwds={"color": "gainsboro", "label": "No data"}
     )
 
     # Customize the plot
