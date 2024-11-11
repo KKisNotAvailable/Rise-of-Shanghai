@@ -111,8 +111,8 @@ cd(dir_structural)
         disp('calculating distances')
     
         % want to normalize units by width of country
-            % TODO: NOT SURE WHAT TO REPLACE
-            unit_norm = 1734 / size(speed_2004,1); % this should give you approximate hours of driving time
+            % in China project, the height and width of one pixel is close to 1km
+            unit_norm = 1; 
 
             temp_dist = cell(K);
             

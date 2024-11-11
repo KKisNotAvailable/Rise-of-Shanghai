@@ -5,11 +5,11 @@
 * making bilateral dataset
 clear
 use "$dir_scratch/China_customs.dta"
-	ren custom custom_orig
+	ren portcode custom_orig
 	ren row row_orig
 	ren col col_orig
 	cross using "$dir_scratch/China_customs.dta"
-	ren custom custom_dest
+	ren portcode custom_dest
 	ren row row_dest
 	ren col col_dest
 	sort custom_orig custom_dest
@@ -24,3 +24,5 @@ outsheet row_orig col_orig row_dest col_dest using "$dir_scratch/coor.out", nona
 		shell matlab -batch "distance_110924" > matlab_output.log 2>&1
 	}
 	* generates 'bilateral_travel_time_China_110924.out'
+
+* TODO: Might want to include the straight bilateral distance... (India project has this)
