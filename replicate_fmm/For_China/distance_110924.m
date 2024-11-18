@@ -60,7 +60,7 @@ setpath
             rivers = double(river_data==250);
             rivers = imfilter(rivers,thicker_pen_filter,'replicate'); 
             rivers = rivers>size_filt;
-            rivers = rivers.*in_china*(1-water_way-on_land-mixed_road);
+            rivers = rivers.*in_china.*(1-water_way-on_land-mixed_road);
 
     % aggregate roads and rivers
         ming_roads_rivers = (on_land + water_way + mixed_road + rivers)>0;
