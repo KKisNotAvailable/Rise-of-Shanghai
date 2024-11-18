@@ -62,7 +62,7 @@ use "$dir_scratch/custom_distance_${date}.dta"
 	sort custom_orig custom_dest
 	
     * get the pairwise straight line distance
-	vincenty lat_orig lon_orig lat_dest lon_dest, vin(distance_straight)
+	vincenty lat_orig lon_orig lat_dest lon_dest, vin(distance_straight) inkm
 	lab var distance_calculated "calculated travel time (hr)"
 	lab var distance_straight "straight distance (km)"
 	corr distance* /* looks good */
