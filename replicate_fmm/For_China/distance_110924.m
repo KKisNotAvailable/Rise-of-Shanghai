@@ -86,8 +86,11 @@ cd(dir_structural)
     speed_china = 3; % assume normal people walk at 3km/hr
     speed_elsewhere = 0.1;
     
-    speed_img = on_land.*speed_on_land + water_way.*speed_water_way + mixed_road.*speed_mixed_road + rivers.*speed_river + sea.*speed_sea + (1-ming_roads_rivers).*in_china*speed_china + (1-in_china)*speed_elsewhere;
-
+    % All roads
+    % speed_img = on_land.*speed_on_land + water_way.*speed_water_way + mixed_road.*speed_mixed_road + rivers.*speed_river + sea.*speed_sea + (1-ming_roads_rivers).*in_china*speed_china + (1-in_china)*speed_elsewhere;
+    
+    % Exclude Sea
+    speed_img = on_land.*speed_on_land + water_way.*speed_water_way + mixed_road.*speed_mixed_road + rivers.*speed_river + (1-ming_roads_rivers).*in_china*speed_china + (1-in_china)*speed_elsewhere;
 
 % Get the locations' indeices on the matrix
     data_coor = load(strcat(dir_scratch,'coor.out')); % N x 4 matrix
