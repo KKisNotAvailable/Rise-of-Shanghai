@@ -164,7 +164,7 @@ def location_fixed_effect(df: pd.DataFrame, suffixes: list, locations: list = []
 
     return portcode_params
 
-def market_access(pop_df: pd.DataFrame, dist_df: pd.DataFrame):
+def _calculate_market_access(pop_df: pd.DataFrame, dist_df: pd.DataFrame):
     '''
     If we want to use matrix multiplication, we can make the travel time
     into a matrix and population as array, and then do the work.
@@ -185,6 +185,7 @@ def market_access(pop_df: pd.DataFrame, dist_df: pd.DataFrame):
     )
     locs = time_mat.columns
     time_mat = time_mat.values
+    # TODO: still get warning here
     recip_time_mat = np.where(time_mat == 0, 0, 1 / time_mat)
 
     # (opt.) check diagonal
@@ -205,6 +206,62 @@ def market_access(pop_df: pd.DataFrame, dist_df: pd.DataFrame):
         'custom': locs,
         'market_access': ma_vec
     })
+
+    return ma_df
+
+def get_market_access(dist_file_name: str):
+    '''
+    '''
+    dist_df = pd.read_stata(f"{FMM_RES_PATH}{dist_file_name}.dta")
+    pop_df = pd.read_excel(POPULATION_FILE, sheet_name='Raw', header=1)
+
+    # 1. Use the lon lat in dist_df to find the corresponding prefecture from 
+    #    CHGis 1820 map
+    # get the lon and lat
+    loc_lon_lat = dist_df[['custom_orig', 'lon_orig', 'lat_orig']]
+    loc_lon_lat.columns = ['custom', 'lon', 'lat']
+    loc_lon_lat = loc_lon_lat.drop_duplicates(
+        subset=['custom'], keep='first').reset_index(drop=True)
+    
+    # just for testing
+    # loc_lon_lat = pd.read_excel(TOP_LOCATION_FILE)
+    # loc_lon_lat = loc_lon_lat[['portcode', 'name_ch', 'lon', 'lat']].rename(columns={'portcode': 'custom'})
+    
+    # turn into geo dataframe for matching
+    geometry = [Point(xy) for xy in zip(loc_lon_lat['lon'], loc_lon_lat['lat'])]
+    loc_gdf = gpd.GeoDataFrame(loc_lon_lat, geometry=geometry)
+    loc_gdf = loc_gdf.set_crs(NORMAL_LON_LAT_CRS)
+
+    china_gdf = gpd.read_file(CHINA_PREF_MAP, encoding='utf-8')
+    china_gdf = china_gdf[['LEV1_CH', 'NAME_CH', 'geometry']]
+    china_gdf = china_gdf.to_crs(NORMAL_LON_LAT_CRS)
+
+    loc_gdf = gpd.sjoin(loc_gdf, china_gdf, how='left', predicate='within')
+
+    # 2. Get the corresponding population from pop_df
+    pop_df = pop_df[['prov', 'pref', 'prefcd', 'Y1820']]
+    pop_df['Y1820'] = pop_df['Y1820'] * 10000  # stated in the raw data, figure is in 'wan'
+    pop_df.columns = ['LEV1_CH', 'NAME_CH', 'prefcd', 'pop']
+
+    # first get population for prefecture
+    pop_pref_df = pop_df[['NAME_CH', 'pop']]
+    loc_pop_df = loc_gdf.merge(pop_pref_df, on='NAME_CH', how='left')
+
+    # get population for agg. province, since 吉林 has no prefecture data (but 盛京 have mapping problem, in population data it's called 遼寧)
+    pop_prov_df = pop_df.loc[pop_df['prefcd'] == 0, ['LEV1_CH', 'pop']]\
+        .rename(columns={'pop': 'pop_prov'})
+    loc_pop_df = loc_pop_df.merge(pop_prov_df, on='LEV1_CH', how='left')
+    
+    # for 吉林, fill population with province data
+    loc_pop_df['pop'] = loc_pop_df['pop'].fillna(loc_pop_df['pop_prov'])
+    # 'LEV1_CH' = province, 'NAME_CH' = prefecture, 'name_ch' = location
+    name_map = loc_pop_df[['custom', 'LEV1_CH', 'NAME_CH']]
+    loc_pop_df = loc_pop_df[['custom', 'pop']]
+
+    # 3. Calculate the market access
+    ma_df = _calculate_market_access(pop_df=loc_pop_df, dist_df=dist_df)
+
+    ma_df = ma_df.merge(name_map, on='custom', how='left')
 
     return ma_df
 
@@ -394,54 +451,22 @@ def analysis(df: pd.DataFrame):
     # ---------------
     #  market access
     # ---------------
-    dist_df = pd.read_stata(f"{FMM_RES_PATH}final_result_110924.dta")
-    pop_df = pd.read_excel(POPULATION_FILE, sheet_name='Raw', header=1)
+    ma_full = get_market_access('final_result_fullroad_110924')
+    ma_nosea = get_market_access('final_result_nosea_110924')
+    ma_nosea = ma_nosea[['custom', 'market_access']]\
+        .rename(columns={'market_access': 'ma_nosea'})
 
-    # 1. Use the lon lat in dist_df to find the corresponding prefecture from 
-    #    CHGis 1820 map
-    # get the lon and lat
-    loc_lon_lat = dist_df[['custom_orig', 'lon_orig', 'lat_orig']]
-    loc_lon_lat.columns = ['custom', 'lon', 'lat']
-    loc_lon_lat = loc_lon_lat.drop_duplicates(
-        subset=['custom'], keep='first').reset_index(drop=True)
-    
-    # just for testing
-    # loc_lon_lat = pd.read_excel(TOP_LOCATION_FILE)
-    # loc_lon_lat = loc_lon_lat[['portcode', 'name_ch', 'lon', 'lat']].rename(columns={'portcode': 'custom'})
-    
-    # turn into geo dataframe for matching
-    geometry = [Point(xy) for xy in zip(loc_lon_lat['lon'], loc_lon_lat['lat'])]
-    loc_gdf = gpd.GeoDataFrame(loc_lon_lat, geometry=geometry)
-    loc_gdf = loc_gdf.set_crs(NORMAL_LON_LAT_CRS)
+    ma_check = ma_full.merge(ma_nosea, on='custom', how='left')
 
-    china_gdf = gpd.read_file(CHINA_PREF_MAP, encoding='utf-8')
-    china_gdf = china_gdf[['LEV1_CH', 'NAME_CH', 'geometry']]
-    china_gdf = china_gdf.to_crs(NORMAL_LON_LAT_CRS)
+    loc_names = pd.read_excel(TOP_LOCATION_FILE)
+    loc_names = loc_names[['portcode', 'name_ch']]\
+        .rename(columns={'portcode': 'custom', 'name_ch': 'location'})
 
-    loc_gdf = gpd.sjoin(loc_gdf, china_gdf, how='left', predicate='within')
+    ma_check = ma_check.merge(loc_names, on='custom', how='left')
+    ma_check = ma_check[['LEV1_CH', 'NAME_CH', 'location', 'custom', 'market_access', 'ma_nosea']]
 
-    # 2. Get the corresponding population from pop_df
-    pop_df = pop_df[['prov', 'pref', 'prefcd', 'Y1820']]
-    pop_df['Y1820'] = pop_df['Y1820'] * 10000  # stated in the raw data, figure is in 'wan'
-    pop_df.columns = ['LEV1_CH', 'NAME_CH', 'prefcd', 'pop']
-
-    # first get population for prefecture
-    pop_pref_df = pop_df[['NAME_CH', 'pop']]
-    loc_pop_df = loc_gdf.merge(pop_pref_df, on='NAME_CH', how='left')
-
-    # get population for agg. province, since 吉林 has no prefecture data (but 盛京 have mapping problem, in population data it's called 遼寧)
-    pop_prov_df = pop_df.loc[pop_df['prefcd'] == 0, ['LEV1_CH', 'pop']]\
-        .rename(columns={'pop': 'pop_prov'})
-    loc_pop_df = loc_pop_df.merge(pop_prov_df, on='LEV1_CH', how='left')
-    
-    # for 吉林, fill population with province data
-    loc_pop_df['pop'] = loc_pop_df['pop'].fillna(loc_pop_df['pop_prov'])
-    loc_pop_df = loc_pop_df[['custom', 'pop']]
-
-    # 3. Calculate the market access
-    ma_df = market_access(pop_df=loc_pop_df, dist_df=dist_df)
-
-    print(ma_df)
+    # print(ma_check)
+    ma_check.to_csv('./output/market_access_comparison.csv', index=False)
 
     return
 
