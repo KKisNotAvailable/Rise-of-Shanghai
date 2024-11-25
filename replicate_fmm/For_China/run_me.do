@@ -15,7 +15,7 @@ global date = "110924"
 cd "$dir"
 
 set maxvar 120000, perm
-local redo_highwaydistance = 0 // default = 0 => 在 distance_081721.do 裡面會用到，要重跑 matlab 部分就要改成 1
+local redo_highwaydistance = 1 // default = 0 => 在 distance_081721.do 裡面會用到，要重跑 matlab 部分就要改成 1
 include "distance_110924.do" // note that this calls distance_081721.m SYNCED
 
 
