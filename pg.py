@@ -192,11 +192,15 @@ def line_to_matrix(filename: str, map_info: dict):
     if filename == 'ming_traffic':
         cur_lines = gpd.read_file(
             f"{FMM_REP_DATA_PATH}{filename}/",
-            encoding='utf-8'
+            encoding='utf-8',
+            layer='mingroad_line'
         )
-        # the original LINESTRING currently is in normal long-lat format
+        # the original LINESTRING is in normal long-lat format
         cur_lines = cur_lines.set_crs(NORMAL_LON_LAT_CRS)
         cur_lines = cur_lines.to_crs(map_info['crs'])
+
+        # print(list(cur_lines[cur_lines['type'] != '陸']['name']))
+        # return
     else:
         cur_lines = gpd.read_file(
             f"{FMM_REP_DATA_PATH}CHGis/{filename}/",
@@ -413,7 +417,7 @@ def main():
 
     # road data
     road_ming = 'ming_traffic'
-    # road_mat = line_to_matrix(road_ming, map_info=map_info)
+    road_mat = line_to_matrix(road_ming, map_info=map_info)
     # plot_matrix(road_mat, title='China - Ming Roads', save_fig=False)
 
     # NOTE: I'm thinking do we need coast anymore? since there's no reason to 
