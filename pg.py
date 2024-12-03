@@ -207,6 +207,19 @@ def line_to_matrix(filename: str, map_info: dict):
             encoding='utf-8'
         )
 
+    # for checking river data (river name has a lot of None)
+    def river_data_check():
+        print(cur_lines[['ORDER_', 'RIVERS_ID', 'KEY_ID_1']])
+
+        # tmp = cur_lines['NAME_FT']
+        # tmp = tmp.dropna()
+        # n = cur_lines.shape[0]
+        # print(f"Total number of rivers: {n}")
+        # print(f"Count of rivers with no name: {n - len(tmp)}")
+        # print(f"Count of unique river names: {len(set(tmp))}")
+
+    river_data_check()
+
     if not 'type' in cur_lines.columns:
         cur_lines['type'] = '陸'
 
@@ -412,12 +425,12 @@ def main():
 
     # river
     rvr = "v6_1820_coded_rvr_lin_utf"
-    # rvr_mat = line_to_matrix(rvr, map_info=map_info)
+    rvr_mat = line_to_matrix(rvr, map_info=map_info)
     # plot_matrix(rvr_mat, title='China - rivers', save_fig=False)
 
     # road data
     road_ming = 'ming_traffic'
-    road_mat = line_to_matrix(road_ming, map_info=map_info)
+    # road_mat = line_to_matrix(road_ming, map_info=map_info)
     # plot_matrix(road_mat, title='China - Ming Roads', save_fig=False)
 
     # NOTE: I'm thinking do we need coast anymore? since there's no reason to 

@@ -466,7 +466,7 @@ def analysis(df: pd.DataFrame):
     ma_check = ma_check[['LEV1_CH', 'NAME_CH', 'location', 'custom', 'market_access', 'ma_nosea']]
 
     # print(ma_check)
-    ma_check.to_csv('./output/market_access_comparison.csv', index=False)
+    ma_check.to_csv('./output/market_access_comparison.csv', index=False, encoding='utf-8')
 
     return
 
