@@ -164,7 +164,7 @@ def location_fixed_effect(df: pd.DataFrame, suffixes: list, locations: list = []
 
     return portcode_params
 
-def _calculate_market_access(pop_df: pd.DataFrame, dist_df: pd.DataFrame):
+def _calculate_market_access(pop_df: pd.DataFrame, dist_df: pd.DataFrame, alpha=0.2):
     '''
     If we want to use matrix multiplication, we can make the travel time
     into a matrix and population as array, and then do the work.
@@ -185,8 +185,8 @@ def _calculate_market_access(pop_df: pd.DataFrame, dist_df: pd.DataFrame):
     )
     locs = time_mat.columns
     time_mat = time_mat.values
-    # TODO: still get warning here
-    recip_time_mat = np.where(time_mat == 0, 0, 1 / time_mat)
+    masked_time_mat = np.ma.masked_equal(time_mat, 0)  # Mask zeros
+    recip_time_mat = (1 / (masked_time_mat ** alpha)).filled(0)
 
     # (opt.) check diagonal
     # is_diagonal_zero = np.diag(mat.values).all() == 0
@@ -464,6 +464,8 @@ def analysis(df: pd.DataFrame):
 
     ma_check = ma_check.merge(loc_names, on='custom', how='left')
     ma_check = ma_check[['LEV1_CH', 'NAME_CH', 'location', 'custom', 'market_access', 'ma_nosea']]
+
+    ma_check['chg_pct'] = ma_check['market_access'] / ma_check['ma_nosea'] - 1
 
     # print(ma_check)
     ma_check.to_csv('./output/market_access_comparison.csv', index=False, encoding='utf-8')
